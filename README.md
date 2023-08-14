@@ -17,12 +17,13 @@
 https://github.com/Hecker5556/instadownloader/assets/96238375/ecb26c67-24f7-4331-80ab-69ef560a45cc
 
 # Usage:
+## double quote the link because sometimes the link may have &
 ## unbuilt:
-    python insta.py link
+    python insta.py "link"
 ## built:
-    insta link
+    insta "link"
 ## linux:
-    path/to/insta.py link
+    path/to/insta.py "link"
 
 
 
