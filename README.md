@@ -14,9 +14,7 @@
 ## Get sessionid
 ### Before you start running the code, you will need to add a sessionid to a .env file, which you can get by either checking network traffic on instagram or using a cookie viewing extension
 ## Video tutorial why not 
-<video width="1920" height="1080" controls>
-  <source src="https://github.com/Hecker5556/instadownloader/assets/96238375/a0291995-2cb9-4b2a-970e-ac6aed43550d" type="video/mp4">
-</video>
+https://github.com/Hecker5556/instadownloader/assets/96238375/a0291995-2cb9-4b2a-970e-ac6aed43550d
 
 # Usage
     insta.py [-h] link
