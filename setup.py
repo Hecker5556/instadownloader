@@ -1,11 +1,28 @@
 import subprocess, sys, os
 def main():
     subprocess.run('pip install -r requirements.txt'.split())
+    if not os.path.exists('env.py'):
+        try:
+            import pygame
+
+            pygame.mixer.init()
+
+            sound_file = "the.wav"
+            sound = pygame.mixer.Sound(sound_file)
+
+            sound.play()
+            subprocess.run('python writeid.py'.split())
+        except Exception as e:
+            print(e)
+            input()
     if sys.platform.startswith('win'):
         subprocess.run('pip install cx_Freeze'.split())
+
         from cx_Freeze import setup, Executable
 
-        build_options = {'packages': [], 'excludes': []}
+        build_options = {'packages': ['requests', 'json', 're', 
+                                      'os', 'tqdm', 'datetime', 
+                                      'argparse', 'dotenv', 'logging'], 'excludes': [], 'optimize': 2}
 
         base = 'console'
 
@@ -24,7 +41,6 @@ def main():
             if pathtoexe in files:
                 filepath = os.path.abspath(root)
                 break
-
         import winreg
 
         def add_to_path(directory, user=False):

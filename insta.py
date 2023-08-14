@@ -2,16 +2,21 @@ import requests, json, re, os
 from tqdm import tqdm
 from datetime import datetime
 import argparse
-from dotenv import load_dotenv
-load_dotenv()
+import env
+import logging
+sessionid = env.sessionid
+
+
 class instadownloader:
     def __init__(self) -> None:
         pass
     
     def extract(link: str):
+        logging.basicConfig(level=logging.DEBUG, format="%(message)s")
+        logging.debug(link)
         allmedia = r'\"carousel_media\":(.*?\"location\")'
         cookies = {
-            'sessionid': os.getenv('sessionid'),
+            'sessionid': sessionid,
         }
 
         headers = {
@@ -32,10 +37,15 @@ class instadownloader:
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
         }
         r = requests.get(link, headers=headers, cookies=cookies)
+        logging.debug(cookies)
+        logging.debug(headers)
+        rtext = r.text
+        logging.debug(r.status_code)
         if 'reel' not in link:
-            matches = re.findall(allmedia, r.text, re.MULTILINE)
+            matches = re.findall(allmedia, rtext, re.MULTILINE)
             if matches and matches != ['null,"location"']:
                 for match in matches:
+                    logging.debug('extracting posts')
                     mpddash = r'(\"video_dash_manifest\":(?!null)(.*?\"\,))'
                     match = match.replace('\/', '/').encode('utf-8').decode('unicode_escape').replace('\n', '')[:-11]
                     #for some reason the dash manifest would bug out the json decoder
@@ -62,23 +72,39 @@ class instadownloader:
                             print(match[char])
                             print(match[char-50:char+50])
             else:
+                logging.debug('single image post')
                 #prolly a single post image
-                patternimage = r'\"image_versions2\":{\"candidates\":(.*?\])'
-                matches = re.findall(patternimage, r.text, re.MULTILINE)
+                for i in range(3):
+                    patternimage = r'\"image_versions2\":{\"candidates\":(.*?\])'
+                    matches = re.findall(patternimage, rtext)
+                    if matches:
+                        break
+                    else:
+                        logging.debug('trying again')
+                        r = requests.get(link, cookies=cookies, headers=headers)
+                        rtext = r.text
+                        continue
+                if matches:
+                    pass
+                else:
+                    logging.debug('couldnt find')
+                    with open('instaresponse.txt', 'w', encoding='utf=8') as f1:
+                        f1.write(rtext)
                 matches = matches[0]
                 matches = json.loads(matches)
                 media = {'jpg': matches[0].get('url')}
 
         else:
+            logging.debug('extracting video')
             pattern = r'\"video_versions\":(.*?\])'
-            matches = re.findall(pattern, r.text, re.MULTILINE)
+            matches = re.findall(pattern, rtext, re.MULTILINE)
             thejson = json.loads(matches[0])
             media: dict = {}
             for i in thejson:
                 media['mp4'] = (i['url'])
                 break
         usernamepat = r'\"username\":\"[\w\d\-\_\.]{1,}\"'
-        username = re.findall(usernamepat, r.text)[0].split(':')[1].replace('"', '')
+        username = re.findall(usernamepat, rtext)[0].split(':')[1].replace('"', '')
         return media, username
     
     def download(link: str):
@@ -102,8 +128,10 @@ class instadownloader:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='download instagram posts and reels')
     parser.add_argument("link", type=str, help='link to instagram post or reel')
-    args = parser.parse_args()
+    args = parser.parse_args()#https://www.instagram.com/p/Cv7j5DzsDYy/?utm_source=ig_web_copy_link&igshid=MzRlODBiNWFlZA==
+    if '?' in args.link:
+        args.link = args.link.split('?')[0]
     result = instadownloader.download(args.link)
-    print(result)
+    print(f"{result[0]}\n{result[1].items()}")
 
             
