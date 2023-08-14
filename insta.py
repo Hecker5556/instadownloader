@@ -110,10 +110,11 @@ class instadownloader:
     def download(link: str):
         media, username = instadownloader.extract(link)
         filenames = []
-        for key, value in media.items():
+        for index, (key, value) in enumerate(media.items()):
             r = requests.get(value, stream=True)
             progress = tqdm(total=int(r.headers.get('content-length')), unit='iB', unit_scale=True)
-            filename = f'{username}-{round(datetime.now().timestamp())}.{"jpg" if "jpg" in key else "mp4"}' if not os.path.exists(f'{username}-{round(datetime.now().timestamp())}.{"jpg" if "jpg" in key else "mp4"}') else f'{username}-{round(datetime.now().timestamp())+1}.{"jpg" if "jpg" in key else "mp4"}'
+            filename = f'{username}-{round(datetime.now().timestamp())}-{index}.{"jpg" if "jpg" in key else "mp4"}'
+
             with open(filename, 'wb') as f1:
                 for data in r.iter_content(1024):
                     progress.update(len(data))
