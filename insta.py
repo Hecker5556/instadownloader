@@ -3,7 +3,6 @@ from tqdm import tqdm
 from datetime import datetime
 import argparse
 from dotenv import load_dotenv
-from pprint import pprint
 load_dotenv()
 class instadownloader:
     def __init__(self) -> None:
