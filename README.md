@@ -14,10 +14,14 @@
 ## Get sessionid
 ### Before you start running the code, you will need to add a sessionid to a .env file, which you can get by either checking network traffic on instagram or using a cookie viewing extension
 ## Video tutorial why not 
-<video width="1920" height="1080" controls>
-  <source src="https://github.com/Hecker5556/test/assets/96238375/0ffe4b09-68f5-449e-b938-5eb672d919c6" type="video/mp4">
-</video>
+https://github.com/Hecker5556/instadownloader/assets/96238375/ecb26c67-24f7-4331-80ab-69ef560a45cc
 
-# Usage
-    insta.py [-h] link
+# Usage:
+## unbuilt:
+    python insta.py link
+## built:
+    insta link
+## linux:
+    path/to/insta.py link
+
 
