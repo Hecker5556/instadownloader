@@ -101,8 +101,9 @@ class instadownloader:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='download instagram posts and reels')
-    parser.add_argument("link", help='link to instagram post or reel')
+    parser.add_argument("link", type=str, help='link to instagram post or reel')
     args = parser.parse_args()
     result = instadownloader.download(args.link)
+    print(result)
 
             
