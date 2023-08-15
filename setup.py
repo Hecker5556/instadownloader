@@ -71,9 +71,9 @@ def main():
             if pathtopy in files:
                 filepath = os.path.abspath(root)
                 break
-        with open(pathtopy, 'r') as f1:
+        with open(filepath, 'r') as f1:
             script = f1.read()
-        with open(pathtopy, 'w') as f1:
+        with open(filepath, 'w') as f1:
             f1.write('#!/usr/bin/env python\n' + script)
         homedirectory = os.path.expanduser('~')
         profilefile = os.path.join(homedirectory, '.bashrc')
