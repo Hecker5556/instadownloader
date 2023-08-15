@@ -1,6 +1,6 @@
 import subprocess, sys, os
 def main():
-    subprocess.run('pip install -r requirements.txt'.split())
+    subprocess.run(f'pip install -r {os.path.join(os.path.dirname(os.path.dirname(__file__)), "instadownloader/requirements.txt")}'.split())
     if not os.path.exists('env.py'):
         try:
             import pygame
