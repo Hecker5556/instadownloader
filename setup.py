@@ -20,9 +20,7 @@ def main():
 
         from cx_Freeze import setup, Executable
 
-        build_options = {'packages': ['requests', 'json', 're', 
-                                      'os', 'tqdm', 'datetime', 
-                                      'argparse', 'dotenv', 'logging'], 'excludes': [], 'optimize': 2}
+        build_options = {'packages': [], 'excludes': [], 'optimize': 2}
 
         base = 'console'
 

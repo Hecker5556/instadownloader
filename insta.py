@@ -1,19 +1,25 @@
 import requests, json, re, os
-from tqdm import tqdm
+from tqdm.asyncio import tqdm
 from datetime import datetime
 import argparse
 import env
 import logging
+import asyncio, aiohttp, aiofiles
 sessionid = env.sessionid
 
 
 class instadownloader:
     def __init__(self) -> None:
         pass
-    
-    def extract(link: str):
+    class HTTPLoggingHandler(logging.Handler):
+        def emit(self, record):
+            msg = self.format(record)
+            print(msg) 
+    async def extract(link: str):
         logging.basicConfig(level=logging.DEBUG, format="%(message)s")
         logging.debug(link)
+        logger = logging.getLogger('aiohttp.client')
+        logger.addHandler(instadownloader.HTTPLoggingHandler())
         allmedia = r'\"carousel_media\":(.*?\"location\")'
         cookies = {
             'sessionid': sessionid,
@@ -36,11 +42,9 @@ class instadownloader:
             'upgrade-insecure-requests': '1',
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
         }
-        r = requests.get(link, headers=headers, cookies=cookies)
-        logging.debug(cookies)
-        logging.debug(headers)
-        rtext = r.text
-        logging.debug(r.status_code)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(link, headers=headers, cookies=cookies) as r:
+                rtext = await r.text()
         if 'reel' not in link:
             matches = re.findall(allmedia, rtext, re.MULTILINE)
             if matches and matches != ['null,"location"']:
@@ -106,24 +110,31 @@ class instadownloader:
         usernamepat = r'\"username\":\"[\w\d\-\_\.]{1,}\"'
         username = re.findall(usernamepat, rtext)[0].split(':')[1].replace('"', '')
         return media, username
-    
-    def download(link: str):
-        media, username = instadownloader.extract(link)
+    async def downloadworker(link: str, filename: str):
+        async with aiofiles.open(filename, 'wb') as f1:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(link) as response:
+                    totalsize = int(response.headers.get('content-length'))
+                    progress = tqdm(total=totalsize, unit='iB', unit_scale=True)
+                    while True:
+                        chunk = await response.content.read(1024)
+                        if not chunk:
+                            break
+                        await f1.write(chunk)
+                        progress.update(len(chunk))
+                    progress.close()
+    async def download(link: str):
+        media, username = await instadownloader.extract(link)
         filenames = []
+        tasks = []
         for index, (key, value) in enumerate(media.items()):
-            r = requests.get(value, stream=True)
-            progress = tqdm(total=int(r.headers.get('content-length')), unit='iB', unit_scale=True)
             filename = f'{username}-{round(datetime.now().timestamp())}-{index}.{"jpg" if "jpg" in key else "mp4"}'
-
-            with open(filename, 'wb') as f1:
-                for data in r.iter_content(1024):
-                    progress.update(len(data))
-                    f1.write(data)
-            progress.close()
             filenames.append(filename)
             filesizes = {}
-            for i in filenames:
-                filesizes[i] = str(round(os.path.getsize(i)/(1024*1024),2)) + ' mb'
+            tasks.append(instadownloader.downloadworker(link = value, filename=filename))
+        await asyncio.gather(*tasks)
+        for i in filenames:
+            filesizes[i] = str(round(os.path.getsize(i)/(1024*1024),2)) + ' mb'
         return filenames, filesizes
 
 if __name__ == '__main__':
@@ -132,7 +143,8 @@ if __name__ == '__main__':
     args = parser.parse_args()#https://www.instagram.com/p/Cv7j5DzsDYy/?utm_source=ig_web_copy_link&igshid=MzRlODBiNWFlZA==
     if '?' in args.link:
         args.link = args.link.split('?')[0]
-    result = instadownloader.download(args.link)
+    result = asyncio.run(instadownloader.download(args.link))
+    print('\n')
     print(f"{result[0]}\n{result[1].items()}")
 
             
