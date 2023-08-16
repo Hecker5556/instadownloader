@@ -11,15 +11,9 @@ sessionid = env.sessionid
 class instadownloader:
     def __init__(self) -> None:
         pass
-    class HTTPLoggingHandler(logging.Handler):
-        def emit(self, record):
-            msg = self.format(record)
-            print(msg) 
     async def extract(link: str):
         logging.basicConfig(level=logging.DEBUG, format="%(message)s")
         logging.debug(link)
-        logger = logging.getLogger('aiohttp.client')
-        logger.addHandler(instadownloader.HTTPLoggingHandler())
         allmedia = r'\"carousel_media\":(.*?\"location\")'
         cookies = {
             'sessionid': sessionid,
