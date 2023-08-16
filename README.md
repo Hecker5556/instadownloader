@@ -26,16 +26,18 @@ https://github.com/Hecker5556/instadownloader/assets/96238375/ecb26c67-24f7-4331
     path/to/insta.py "link"
 
 # Usage in python
-    import sys, asyncio
-    #do this to add to sys path
-    if 'instadownloader' not in sys.path:
-        sys.path.append('instadownloader')
-    from instadownloader.insta import instadownloader
-    filenames, fileinfo = asyncio.run(instadownloader.download(link))
+```python
+import sys, asyncio
+#do this to add to sys path
+if 'instadownloader' not in sys.path:
+    sys.path.append('instadownloader')
+from instadownloader.insta import instadownloader
+filenames, fileinfo = asyncio.run(instadownloader.download(link))
 
-    #in async function
-    async def main():
-        filenames, fileinfo = await instadownloader.download(link)
+#in async function
+async def main():
+    filenames, fileinfo = await instadownloader.download(link)
+```
 
 
 
