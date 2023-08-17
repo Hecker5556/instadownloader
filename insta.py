@@ -5,6 +5,7 @@ import argparse
 import env
 import logging
 import asyncio, aiohttp, aiofiles
+from yarl import URL
 sessionid = env.sessionid
 
 
@@ -107,7 +108,7 @@ class instadownloader:
     async def downloadworker(link: str, filename: str):
         async with aiofiles.open(filename, 'wb') as f1:
             async with aiohttp.ClientSession() as session:
-                async with session.get(link) as response:
+                async with session.get(URL(link, encoded=True)) as response:
                     totalsize = int(response.headers.get('content-length'))
                     progress = tqdm(total=totalsize, unit='iB', unit_scale=True)
                     while True:
@@ -118,6 +119,7 @@ class instadownloader:
                         progress.update(len(chunk))
                     progress.close()
     async def download(link: str):
+        """link: str - instagram link to a post or a reel (cant download stories yet)"""
         media, username = await instadownloader.extract(link)
         filenames = []
         tasks = []
