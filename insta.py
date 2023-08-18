@@ -41,6 +41,7 @@ class instadownloader:
             async with session.get(link, headers=headers, cookies=cookies) as r:
                 rtext = await r.text()
         if 'reel' not in link:
+            post = 'multiple'
             matches = re.findall(allmedia, rtext, re.MULTILINE)
             if matches and matches != ['null,"location"']:
                 for match in matches:
@@ -72,6 +73,7 @@ class instadownloader:
                             print(match[char-50:char+50])
             else:
                 logging.debug('single image post')
+                post = 'image'
                 #prolly a single post image
                 for i in range(3):
                     patternimage = r'\"image_versions2\":{\"candidates\":(.*?\])'
@@ -94,6 +96,7 @@ class instadownloader:
                 media = {'jpg': matches[0].get('url')}
 
         else:
+            post = 'reel'
             logging.debug('extracting video')
             pattern = r'\"video_versions\":(.*?\])'
             matches = re.findall(pattern, rtext, re.MULTILINE)
@@ -104,7 +107,7 @@ class instadownloader:
                 break
         usernamepat = r'\"username\":\"[\w\d\-\_\.]{1,}\"'
         username = re.findall(usernamepat, rtext)[0].split(':')[1].replace('"', '')
-        return media, username
+        return media, username, post
     async def downloadworker(link: str, filename: str):
         async with aiofiles.open(filename, 'wb') as f1:
             async with aiohttp.ClientSession() as session:
@@ -120,7 +123,7 @@ class instadownloader:
                     progress.close()
     async def download(link: str):
         """link: str - instagram link to a post or a reel (cant download stories yet)"""
-        media, username = await instadownloader.extract(link)
+        media, username, post = await instadownloader.extract(link)
         filenames = []
         tasks = []
         for index, (key, value) in enumerate(media.items()):
@@ -131,7 +134,7 @@ class instadownloader:
         await asyncio.gather(*tasks)
         for i in filenames:
             filesizes[i] = str(round(os.path.getsize(i)/(1024*1024),2)) + ' mb'
-        return filenames, filesizes
+        return filenames, filesizes, post
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='download instagram posts and reels')
