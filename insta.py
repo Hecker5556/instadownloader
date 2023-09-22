@@ -105,8 +105,16 @@ class instadownloader:
             for i in thejson:
                 media['mp4'] = (i['url'])
                 break
-        usernamepat = r'\"username\":\"[\w\d\-\_\.]{1,}\"'
-        username = re.findall(usernamepat, rtext)[0].split(':')[1].replace('"', '')
+        usernamepat = r'\"username\":\"(.*?)\"'
+        usernamematches = re.findall(usernamepat, rtext)
+        usercounts = {}
+        for match in usernamematches:
+            if usercounts.get(match):
+                usercounts[match] += 1
+            else:
+                usercounts[match] = 1
+        usercounts = sorted(usercounts.items(), key=lambda x: x[1], reverse=True)
+        username = usercounts[0][0]
         return media, username, post
     async def downloadworker(link: str, filename: str):
         async with aiofiles.open(filename, 'wb') as f1:
