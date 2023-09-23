@@ -15,7 +15,7 @@ class instadownloader:
     async def extract(link: str):
         logging.basicConfig(level=logging.DEBUG, format="%(message)s")
         logging.debug(link)
-        allmedia = r'\"carousel_media\":(.*?\"location\")'
+        allmedia = r'(\{\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":\{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisPostRootQueryRelayPreloader(?:.*?))</script>'
         cookies = {
             'sessionid': sessionid,
         }
@@ -43,34 +43,37 @@ class instadownloader:
         if 'reel' not in link:
             post = 'multiple'
             matches = re.findall(allmedia, rtext, re.MULTILINE)
-            if matches and matches != ['null,"location"']:
-                for match in matches:
-                    logging.debug('extracting posts')
-                    mpddash = r'(\"video_dash_manifest\":(?!null)(.*?\"\,))'
-                    match = match.replace('\/', '/').encode('utf-8').decode('unicode_escape').replace('\n', '')[:-11]
-                    #for some reason the dash manifest would bug out the json decoder
-                    manifests = re.findall(mpddash, match)
-                    for i in manifests:
-                        match = match.replace(i[1], 'null,')
-                    accessibilitycaption = r'(\"accessibility_caption\":(?!null)(.*?\"\,))'
-                    #same with this, some text would bug it out
-                    captions = re.findall(accessibilitycaption, match)
-                    for i in captions:
-                        match = match.replace(i[1], 'null,')
-                    media: dict= {}
-                    try:
-                        for index, i in enumerate(json.loads(match)):
-                            if i['media_type'] == 1:
-                                media['jpg'+str(index)] = i['image_versions2']['candidates'][0]['url']
+            if matches:
+                def find_key(json_obj, target_key):
+                    if isinstance(json_obj, dict):
+                        for key, value in json_obj.items():
+                            if key == target_key:
+                                return value
                             else:
-                                media['mp4'+str(index)] = i['video_versions'][0]['url']
-                    except Exception as e:
-                        print(e)
-                        if 'char' in str(e):
-                            char = int(str(e).split('(char ')[1].replace(')', ''))
-                            print(char)
-                            print(match[char])
-                            print(match[char-50:char+50])
+                                result = find_key(value, target_key)
+                                if result is not None:
+                                    return result
+                    elif isinstance(json_obj, list):
+                        for item in json_obj:
+                            result = find_key(item, target_key)
+                            if result is not None:
+                                return result
+                    return None
+                match = find_key(json.loads(matches[0]), 'carousel_media')
+
+                media: dict= {}
+                try:
+                    for index, i in enumerate(match):
+                        if i['media_type'] == 1:
+                            media['jpg'+str(index)] = i['image_versions2']['candidates'][0]['url']
+                        else:
+                            media['mp4'+str(index)] = i['video_versions'][0]['url']
+                except Exception as e:
+                    print(e)
+                    if 'char' in str(e):
+                        char = int(str(e).split('(char ')[1].replace(')', ''))
+                        print(char)
+                        print(match[char-25:char+25])
             else:
                 logging.debug('single image post')
                 post = 'image'
