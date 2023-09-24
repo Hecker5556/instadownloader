@@ -167,7 +167,10 @@ if __name__ == '__main__':
     if '?' in args.link:
         args.link = args.link.split('?')[0]
     result = asyncio.run(instadownloader.download(args.link))
-    print('\n')
-    print(f"{result[0]}\n{result[1].items()}")
+    if not result:
+        print('error occured')
+    else:
+        print('\n')
+        print(f"{result[0]}\n{result[1].items()}")
 
             
