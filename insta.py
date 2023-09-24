@@ -48,8 +48,7 @@ class instadownloader:
                         rtext += chunk.decode('utf-8')
             except aiohttp.TooManyRedirects:
                 print('change your session ID! too many redirects')
-                from sys import exit
-                exit()
+                return False
 
         if 'reel' not in link:
             post = 'multiple'
@@ -146,6 +145,9 @@ class instadownloader:
     async def download(link: str):
         """link: str - instagram link to a post or a reel (cant download stories yet)"""
         media, username, post = await instadownloader.extract(link)
+        if not media:
+            print('some error occured')
+            return
         filenames = []
         tasks = []
         for index, (key, value) in enumerate(media.items()):
