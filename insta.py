@@ -6,13 +6,15 @@ import env
 import logging
 import asyncio, aiohttp, aiofiles
 from yarl import URL
-sessionid = env.sessionid
+
 
 
 class instadownloader:
     def __init__(self) -> None:
         pass
-    async def extract(link: str):
+    async def extract(link: str, sessionid: str  = None):
+        if not sessionid:
+            sessionid = env.sessionid
         logging.basicConfig(level=logging.DEBUG, format="%(message)s")
         logging.debug(link)
         allmedia = r'(\{\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":\{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisPostRootQueryRelayPreloader(?:.*?))</script>'
@@ -142,12 +144,12 @@ class instadownloader:
                         await f1.write(chunk)
                         progress.update(len(chunk))
                     progress.close()
-    async def download(link: str):
+    async def download(link: str, sessionid: str = None):
         """link: str - instagram link to a post or a reel (cant download stories yet)"""
-        media, username, post = await instadownloader.extract(link)
+        media, username, post = await instadownloader.extract(link, sessionid)
         if not media:
             print('some error occured')
-            return
+            return False
         filenames = []
         tasks = []
         for index, (key, value) in enumerate(media.items()):
