@@ -38,8 +38,19 @@ class instadownloader:
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
         }
         async with aiohttp.ClientSession() as session:
-            async with session.get(link, headers=headers, cookies=cookies) as r:
-                rtext = await r.text()
+            try:
+                async with session.get(link, headers=headers, cookies=cookies) as r:
+                    rtext = ""
+                    while True:
+                        chunk = await r.content.read(1024)
+                        if not chunk:
+                            break
+                        rtext += chunk.decode('utf-8')
+            except aiohttp.TooManyRedirects:
+                print('change your session ID! too many redirects')
+                from sys import exit
+                exit()
+
         if 'reel' not in link:
             post = 'multiple'
             matches = re.findall(allmedia, rtext, re.MULTILINE)
@@ -150,7 +161,7 @@ class instadownloader:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='download instagram posts and reels')
     parser.add_argument("link", type=str, help='link to instagram post or reel')
-    args = parser.parse_args()#https://www.instagram.com/p/Cv7j5DzsDYy/?utm_source=ig_web_copy_link&igshid=MzRlODBiNWFlZA==
+    args = parser.parse_args()
     if '?' in args.link:
         args.link = args.link.split('?')[0]
     result = asyncio.run(instadownloader.download(args.link))
