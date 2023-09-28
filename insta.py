@@ -4,7 +4,7 @@ from datetime import datetime
 import argparse
 import env
 import logging
-import asyncio, aiohttp, aiofiles
+import asyncio, aiohttp, aiofiles, traceback
 from yarl import URL
 
 
@@ -53,6 +53,7 @@ class instadownloader:
                 return False
 
         if 'reel' not in link:
+            print('multiple')
             post = 'multiple'
             matches = re.findall(allmedia, rtext, re.MULTILINE)
             if matches:
@@ -72,43 +73,26 @@ class instadownloader:
                                 return result
                     return None
                 match = find_key(json.loads(matches[0]), 'carousel_media')
-
+                if not match:
+                    print('actually single image')
+                    post = 'image'
+                    match = find_key(json.loads(matches[0]), 'image_versions2')
                 media: dict= {}
-                try:
-                    for index, i in enumerate(match):
-                        if i['media_type'] == 1:
-                            media['jpg'+str(index)] = i['image_versions2']['candidates'][0]['url']
-                        else:
-                            media['mp4'+str(index)] = i['video_versions'][0]['url']
-                except Exception as e:
-                    print(e)
-                    if 'char' in str(e):
-                        char = int(str(e).split('(char ')[1].replace(')', ''))
-                        print(char)
-                        print(match[char-25:char+25])
-            else:
-                logging.debug('single image post')
-                post = 'image'
-                #prolly a single post image
-                for i in range(3):
-                    patternimage = r'\"image_versions2\":{\"candidates\":(.*?\])'
-                    matches = re.findall(patternimage, rtext)
-                    if matches:
-                        break
-                    else:
-                        logging.debug('trying again')
-                        r = requests.get(link, cookies=cookies, headers=headers)
-                        rtext = r.text
-                        continue
-                if matches:
-                    pass
+                if post != 'image':
+                    try:
+                        for index, i in enumerate(match):
+                            if i['media_type'] == 1:
+                                media['jpg'+str(index)] = i['image_versions2']['candidates'][0]['url']
+                            else:
+                                media['mp4'+str(index)] = i['video_versions'][0]['url']
+                    except Exception as e:
+                        traceback.print_exc()
+                        if 'char' in str(e):
+                            char = int(str(e).split('(char ')[1].replace(')', ''))
+                            print(char)
+                            print(match[char-25:char+25])
                 else:
-                    logging.debug('couldnt find')
-                    with open('instaresponse.txt', 'w', encoding='utf=8') as f1:
-                        f1.write(rtext)
-                matches = matches[0]
-                matches = json.loads(matches)
-                media = {'jpg': matches[0].get('url')}
+                    media = {'jpg': match['candidates'][0].get('url')}
 
         else:
             post = 'reel'
