@@ -12,7 +12,7 @@
     pip install -r requirements.txt
 
 ## Get sessionid
-### Before you start running the code, you will need to add a sessionid to a .env file, which you can get by either checking network traffic on instagram or using a cookie viewing extension
+### Before you start running the code, you will need to add a sessionid (and csrftoken to avoid getting temporarily disabled) to a .env file, which you can get by either checking network traffic on instagram or using a cookie viewing extension
 ## Video tutorial why not 
 https://github.com/Hecker5556/instadownloader/assets/96238375/ecb26c67-24f7-4331-80ab-69ef560a45cc
 

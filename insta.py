@@ -12,14 +12,20 @@ from yarl import URL
 class instadownloader:
     def __init__(self) -> None:
         pass
-    async def extract(link: str, sessionid: str  = None):
+    class badsessionid(Exception):
+        def __init__(self, *args: object) -> None:
+            super().__init__(*args)
+    async def extract(link: str, sessionid: str  = None, csrftoken: str = None):
         if not sessionid:
             sessionid = env.sessionid
+        if not csrftoken:
+            csrftoken = env.csrftoken
         logging.basicConfig(level=logging.DEBUG, format="%(message)s")
         logging.debug(link)
         allmedia = r'(\{\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":\{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisPostRootQueryRelayPreloader(?:.*?))</script>'
         cookies = {
             'sessionid': sessionid,
+            'csrftoken': csrftoken
         }
 
         headers = {
@@ -50,7 +56,7 @@ class instadownloader:
                         rtext += chunk.decode('utf-8')
             except aiohttp.TooManyRedirects:
                 print('change your session ID! too many redirects')
-                return False
+                raise instadownloader.badsessionid('change your session ID! too many redirects')
 
         if 'reel' not in link:
             print('multiple')
@@ -130,7 +136,11 @@ class instadownloader:
                     progress.close()
     async def download(link: str, sessionid: str = None):
         """link: str - instagram link to a post or a reel (cant download stories yet)"""
-        media, username, post = await instadownloader.extract(link, sessionid)
+        a = await instadownloader.extract(link, sessionid)
+        if not a:
+            print("error!")
+            return
+        media, username, post = a[0], a[1], a[2]
         if not media:
             print('some error occured')
             return False
