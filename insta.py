@@ -134,9 +134,9 @@ class instadownloader:
                         await f1.write(chunk)
                         progress.update(len(chunk))
                     progress.close()
-    async def download(link: str, sessionid: str = None):
+    async def download(link: str, sessionid: str = None, csrftoken: str = None):
         """link: str - instagram link to a post or a reel (cant download stories yet)"""
-        a = await instadownloader.extract(link, sessionid)
+        a = await instadownloader.extract(link, sessionid, csrftoken)
         if not a:
             print("error!")
             return
