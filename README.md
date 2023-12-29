@@ -4,7 +4,7 @@ Downloads reels, stories, posts with multiple media, and reels with music (combi
 in command prompt:
 ```bash
 git clone https://github.com/Hecker5556/instadownloader.git
-``````
+```
 
 ```bash
 cd instdownloader 
