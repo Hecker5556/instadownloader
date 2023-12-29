@@ -31,19 +31,9 @@ class instadownloader:
         headers = {
             'authority': 'www.instagram.com',
             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'accept-language': 'en-US,en;q=0.8',
-            'cache-control': 'max-age=0',
-            'sec-ch-ua': '"Not/A)Brand";v="99", "Brave";v="115", "Chromium";v="115"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-ch-ua-platform-version': '"10.0.0"',
-            'sec-fetch-dest': 'document',
+            'accept-language': 'en-US,en;q=0.7',
             'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'none',
-            'sec-fetch-user': '?1',
-            'sec-gpc': '1',
-            'upgrade-insecure-requests': '1',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
         async with aiohttp.ClientSession() as session:
             try:
@@ -58,7 +48,7 @@ class instadownloader:
                 print('change your session ID! too many redirects')
                 raise instadownloader.badsessionid('change your session ID! too many redirects')
 
-        if 'reel' not in link:
+        if 'reel' not in link and 'stories' not in link:
             print('multiple')
             post = 'multiple'
             matches = re.findall(allmedia, rtext, re.MULTILINE)
@@ -100,7 +90,7 @@ class instadownloader:
                 else:
                     media = {'jpg': match['candidates'][0].get('url')}
 
-        else:
+        elif 'reel' in link:
             post = 'reel'
             logging.debug('extracting video')
             pattern = r'\"video_versions\":(.*?\])'
@@ -110,6 +100,32 @@ class instadownloader:
             for i in thejson:
                 media['mp4'] = (i['url'])
                 break
+        elif 'stories' in link:
+            post = 'story'
+            patternapp = r"\"X-IG-App-ID\":\"(.*?)\""
+            patternreelid = r"\"props\":{\"user\":{\"id\":\"(.*?)\""
+            patternmediaid = r"https://(?:www\.)?instagram\.com/stories/(?:.*?)/(.*?)/"
+            appid = re.findall(patternapp, rtext)
+            reelsid = re.findall(patternreelid, rtext)
+            mediaid = re.findall(patternmediaid, link)
+            newheaders = headers.copy()
+            newheaders['x-csrftoken'] = csrftoken
+            newheaders['x-ig-app-id'] = appid[0]
+            params = {
+                'media_id': mediaid[0],
+                'reel_ids': reelsid[0],
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.get('https://www.instagram.com/api/v1/feed/reels_media/', params=params, cookies=cookies, headers=newheaders) as r:
+                    resp = await r.text(encoding="utf-8")
+                    realresp = json.loads(resp)
+            media = {}
+            for index, item in enumerate(realresp["reels"][reelsid[0]]["items"]):
+                if item["pk"] == mediaid[0]:
+                    if item.get("video_versions"):
+                        media['mp4' + str(index)] = item["video_versions"][0]["url"]
+                    else:
+                        media['jpg' + str(index)] = item["image_versions2"]["candidates"][0]['url']
         usernamepat = r'\"username\":\"(.*?)\"'
         usernamematches = re.findall(usernamepat, rtext)
         usercounts = {}
