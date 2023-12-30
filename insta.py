@@ -194,12 +194,12 @@ class instadownloader:
                         await f1.write(chunk)
                         progress.update(len(chunk))
                     progress.close()
-    async def download(link: str, sessionid: str = None, csrftoken: str = None):
+    async def download(link: str, sessionid: str = None, csrftoken: str = None, handle_merge: bool = True):
         """link: str - instagram link to a post or a reel (cant download stories yet)"""
         a = await instadownloader.extract(link, sessionid, csrftoken)
         if not a:
             print("error!")
-            return
+            return False
         media, username, post = a[0], a[1], a[2]
         if not media:
             print('some error occured')
@@ -223,7 +223,7 @@ class instadownloader:
                  await instadownloader.downloadworker(link=value.get('url'), filename=filename)
                  files2["audio"] = filename
                  musicinfo = value
-        if post == 'image'and musicinfo:
+        if post == 'image'and musicinfo and handle_merge:
             import subprocess
             filename = f"trimmed-{round(datetime.now().timestamp())}.m4a"
             command = f"ffmpeg -i {files2['audio']} -ss {musicinfo['start']} -v error -to {musicinfo['end']} -c copy {filename}".split()
@@ -235,21 +235,26 @@ class instadownloader:
                 os.remove(value)
             os.remove(filename)
             filenames = [outputfile]
+        else:
+            for i in files2.values():
+                filesizes[i] = str(round(os.path.getsize(i)/(1024*1024),2)) + ' mb'
+            return {"files": files2, "sizes": filesizes, "postType": post, "musicInfo": musicinfo}
         for i in filenames:
             filesizes[i] = str(round(os.path.getsize(i)/(1024*1024),2)) + ' mb'
-        return filenames, filesizes, post
+        return {"files": filenames, "sizes": filesizes, "postType": post, "musicInfo": None}
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='download instagram posts and reels')
     parser.add_argument("link", type=str, help='link to instagram post or reel')
+    parser.add_argument("--handle-merge", "-m", action="store_true", help="whether to not merge and let you do it")
     args = parser.parse_args()
     if '?' in args.link:
         args.link = args.link.split('?')[0]
-    result = asyncio.run(instadownloader.download(args.link))
+    result = asyncio.run(instadownloader.download(args.link, handle_merge=args.handle_merge))
     if not result:
         print('error occured')
     else:
         print('\n')
-        print(f"{result[0]}\n{result[1].items()}")
+        print(result)
 
             
