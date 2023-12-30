@@ -15,6 +15,15 @@ class instadownloader:
     class badsessionid(Exception):
         def __init__(self, *args: object) -> None:
             super().__init__(*args)
+    async def apiresponse(link: str, headers: dict, cookies: dict, params: dict = None):
+        async with aiohttp.ClientSession() as session:
+            async with session.get(link, headers=headers, cookies=cookies, params=params) as r:
+                response = await r.text(encoding="utf-8")
+                return json.loads(response)
+    def app_and_user_id(text: str, appidpattern, useridpattern):
+        appid = re.findall(appidpattern, text)
+        useridpattern = re.findall(useridpattern, text)
+        return appid[0], useridpattern[0]
     async def extract(link: str, sessionid: str  = None, csrftoken: str = None):
         if not sessionid:
             sessionid = env.sessionid
@@ -23,7 +32,7 @@ class instadownloader:
         logging.basicConfig(level=logging.DEBUG, format="%(message)s")
         logging.debug(link)
         allmedia = r'(\{\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":\{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisPostRootQueryRelayPreloader(?:.*?))</script>'
-        musicmedia = r"({\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":{\"require\":\[\[\"PolarisQueryPreloaderCache\",\"add\",\[\],\[\{\"preloaderID\":\"891618966000029196\",\"data\":{\"__bbox\":{\"complete\":true,\"request\":{\"method\":\"GET\",\"url\":\"\\/api\\/v1\\/feed\\/user\\/{user_id}\\/\",\"params\":{\"path\":{\"user_id\":\"29474634220\"},\"query\":{\"count\":7}}},\"result\":{\"response\":\"{\\\"items\\\":(?:.*?))</script>"
+        # musicmedia = r"({\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":{\"require\":\[\[\"PolarisQueryPreloaderCache\",\"add\",\[\],\[\{\"preloaderID\":\"891618966000029196\",\"data\":{\"__bbox\":{\"complete\":true,\"request\":{\"method\":\"GET\",\"url\":\"\\/api\\/v1\\/feed\\/user\\/{user_id}\\/\",\"params\":{\"path\":{\"user_id\":\"29474634220\"},\"query\":{\"count\":7}}},\"result\":{\"response\":\"{\\\"items\\\":(?:.*?))</script>"
         cookies = {
             'sessionid': sessionid,
             'csrftoken': csrftoken
@@ -53,9 +62,8 @@ class instadownloader:
             print('multiple')
             post = 'multiple'
             matches = re.findall(allmedia, rtext, re.MULTILINE)
-            musicmatches = re.findall(musicmedia, rtext, re.MULTILINE)
-            with open("response.json", "w") as f1:
-                json.dump(json.loads(matches[0]), f1, indent=4)
+            # with open("response.txt", "w") as f1:
+            #     f1.write(rtext)
             if matches:
                 def find_key(json_obj, target_key):
                     if isinstance(json_obj, dict):
@@ -74,14 +82,23 @@ class instadownloader:
                     return None
                 match = find_key(json.loads(matches[0]), 'carousel_media')
                 if not match:
+                    patternapp = r"\"X-IG-App-ID\":\"(.*?)\""
+                    patternid = r"\"user_id\":\"(.*?)\""
+                    patternmedia = r"\"media_id\":\"(.*?)\""
+                    mediaid = re.findall(patternmedia, rtext)
+                    appid, userid = instadownloader.app_and_user_id(rtext, patternapp, patternid)
+                    newheaders = headers.copy()
+                    newheaders['x-csrftoken'] = csrftoken
+                    newheaders['x-ig-app-id'] = appid
+                    apiresp = await instadownloader.apiresponse(f"https://www.instagram.com/api/v1/media/{mediaid[0]}/info", headers=newheaders, cookies=cookies)
+                    with open('response.json', 'w') as f1:
+                        json.dump(apiresp, f1, indent=4)
                     print('actually single image')
-                    print("music_metadata" in rtext)
                     post = 'image'
-                    match = find_key(json.loads(matches[0]), 'image_versions2')
+                    match = find_key(apiresp, 'image_versions2')
+                    musicmetadata = find_key(apiresp, 'music_metadata')
                     musicinfo = None
-                    if musicmatches:
-                        response = json.loads(find_key(json.loads(musicmatches[0]), 'response'))
-                        musicmetadata = find_key(response, 'music_metadata')
+                    if musicmetadata and musicmetadata.get("music_info"):
                         downloadurl = musicmetadata["music_info"]["music_asset_info"]["fast_start_progressive_download_url"]
                         durationms = musicmetadata["music_info"]["music_consumption_info"]["overlap_duration_in_ms"]
                         startms = musicmetadata["music_info"]["music_consumption_info"]["audio_asset_start_time_in_ms"]
@@ -133,10 +150,7 @@ class instadownloader:
                 'media_id': mediaid[0],
                 'reel_ids': reelsid[0],
             }
-            async with aiohttp.ClientSession() as session:
-                async with session.get('https://www.instagram.com/api/v1/feed/reels_media/', params=params, cookies=cookies, headers=newheaders) as r:
-                    resp = await r.text(encoding="utf-8")
-                    realresp = json.loads(resp)
+            realresp = await instadownloader.apiresponse('https://www.instagram.com/api/v1/feed/reels_media/', headers=newheaders, cookies=cookies, params=params)
             media = {}
             for index, item in enumerate(realresp["reels"][reelsid[0]]["items"]):
                 if item["pk"] == mediaid[0]:
@@ -200,10 +214,10 @@ class instadownloader:
         if post == 'image'and musicinfo:
             import subprocess
             filename = f"trimmed-{round(datetime.now().timestamp())}.m4a"
-            command = f"ffmpeg -i {files2['audio']} -ss {musicinfo['start']} -v quiet -to {musicinfo['end']} -c copy {filename}".split()
+            command = f"ffmpeg -i {files2['audio']} -ss {musicinfo['start']} -v error -to {musicinfo['end']} -c copy {filename}".split()
             subprocess.run(command)
             outputfile = files2['image'].replace('jpg', 'mp4')
-            command = f"ffmpeg -loop 1 -i {files2['image']} -i {filename} -v quiet -c:v libx264 -c:a aac -r 2 -tune stillimage -strict experimental -b:a 192k -t {musicinfo['duration']} {outputfile}".split()
+            command = f"ffmpeg -loop 1 -i {files2['image']} -i {filename} -v error -c:v libx264 -c:a aac -vf scale=trunc(iw/2)*2:trunc(ih/2)*2 -r 2 -tune stillimage -strict experimental -b:a 192k -t {musicinfo['duration']} {outputfile}".split()
             subprocess.run(command)
             for key, value in files2.items():
                 os.remove(value)
