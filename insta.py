@@ -235,10 +235,10 @@ class instadownloader:
                 os.remove(value)
             os.remove(filename)
             filenames = [outputfile]
-        else:
             for i in files2.values():
                 filesizes[i] = str(round(os.path.getsize(i)/(1024*1024),2)) + ' mb'
             return {"files": files2, "sizes": filesizes, "postType": post, "musicInfo": musicinfo}
+
         for i in filenames:
             filesizes[i] = str(round(os.path.getsize(i)/(1024*1024),2)) + ' mb'
         return {"files": filenames, "sizes": filesizes, "postType": post, "musicInfo": musicinfo}
