@@ -229,7 +229,7 @@ class instadownloader:
             command = f"ffmpeg -i {files2['audio']} -ss {musicinfo['start']} -v error -to {musicinfo['end']} -c copy {filename}".split()
             subprocess.run(command)
             outputfile = files2['image'].replace('jpg', 'mp4')
-            command = f"ffmpeg -loop 1 -i {files2['image']} -i {filename} -v error -c:v libx264 -c:a aac -vf scale=trunc(iw/2)*2:trunc(ih/2)*2 -r 2 -tune stillimage -strict experimental -b:a 192k -t {musicinfo['duration']} {outputfile}".split()
+            command = f"ffmpeg -r 2 -loop 1 -i {files2['image']} -i {filename} -v error -c:a copy -t {musicinfo['duration']} {outputfile}".split()
             subprocess.run(command)
             for key, value in files2.items():
                 os.remove(value)
