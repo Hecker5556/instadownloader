@@ -235,6 +235,9 @@ class instadownloader:
                 os.remove(value)
             os.remove(filename)
             filenames = [outputfile]
+
+            return {"files": filenames, "sizes": round(os.path.getsize(outputfile)/(1024*1024), 2), "postType": post, "musicInfo": musicinfo}
+        elif post == 'image' and musicinfo and not handle_merge:
             for i in files2.values():
                 filesizes[i] = str(round(os.path.getsize(i)/(1024*1024),2)) + ' mb'
             return {"files": files2, "sizes": filesizes, "postType": post, "musicInfo": musicinfo}
