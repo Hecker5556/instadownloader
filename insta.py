@@ -205,9 +205,9 @@ class instadownloader:
             print('some error occured')
             return False
         filenames = []
+        musicinfo = None
         if post == 'image':
             files2 = {}
-            musicinfo = None
         for index, (key, value) in enumerate(media.items()):
             if key != "music":
                 filename = f'{username}-{round(datetime.now().timestamp())}-{index}.{"jpg" if "jpg" in key else "mp4"}'
@@ -241,7 +241,7 @@ class instadownloader:
             return {"files": files2, "sizes": filesizes, "postType": post, "musicInfo": musicinfo}
         for i in filenames:
             filesizes[i] = str(round(os.path.getsize(i)/(1024*1024),2)) + ' mb'
-        return {"files": filenames, "sizes": filesizes, "postType": post, "musicInfo": None}
+        return {"files": filenames, "sizes": filesizes, "postType": post, "musicInfo": musicinfo}
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='download instagram posts and reels')
@@ -250,7 +250,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if '?' in args.link:
         args.link = args.link.split('?')[0]
-    result = asyncio.run(instadownloader.download(args.link, handle_merge=args.handle_merge))
+    result = asyncio.run(instadownloader.download(args.link, handle_merge=not args.handle_merge))
     if not result:
         print('error occured')
     else:
