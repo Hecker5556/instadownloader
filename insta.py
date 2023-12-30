@@ -20,6 +20,20 @@ class instadownloader:
             async with session.get(link, headers=headers, cookies=cookies, params=params) as r:
                 response = await r.text(encoding="utf-8")
                 return json.loads(response)
+    async def api_media(headers: dict, cookies: dict, mediaid: int):
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"https://www.instagram.com/api/v1/media/{mediaid}/info", headers = headers, cookies=cookies) as r:
+                r = await r.text(encoding="utf-8")
+                return json.loads(r)
+    async def api_stories(headers: dict, cookies: dict, reel_ids: int, mediaid: int):
+        async with aiohttp.ClientSession() as session:
+            params = {
+                'media_id': mediaid,
+                'reel_ids': reel_ids,
+            }
+            async with session.get('https://www.instagram.com/api/v1/feed/reels_media/', cookies=cookies, params=params, headers=headers) as r:
+                r = await r.text(encoding="utf-8")
+                return json.loads(r)
     def app_and_user_id(text: str, appidpattern, useridpattern):
         appid = re.findall(appidpattern, text)
         useridpattern = re.findall(useridpattern, text)
@@ -90,9 +104,9 @@ class instadownloader:
                     newheaders = headers.copy()
                     newheaders['x-csrftoken'] = csrftoken
                     newheaders['x-ig-app-id'] = appid
-                    apiresp = await instadownloader.apiresponse(f"https://www.instagram.com/api/v1/media/{mediaid[0]}/info", headers=newheaders, cookies=cookies)
-                    with open('response.json', 'w') as f1:
-                        json.dump(apiresp, f1, indent=4)
+                    apiresp = await instadownloader.api_media(headers=newheaders, cookies=cookies, mediaid = mediaid[0])
+                    # with open('response.json', 'w') as f1:
+                    #     json.dump(apiresp, f1, indent=4)
                     print('actually single image')
                     post = 'image'
                     match = find_key(apiresp, 'image_versions2')
@@ -142,15 +156,13 @@ class instadownloader:
             patternmediaid = r"https://(?:www\.)?instagram\.com/stories/(?:.*?)/(.*?)/"
             appid = re.findall(patternapp, rtext)
             reelsid = re.findall(patternreelid, rtext)
+            if not reelsid:
+                reelsid = re.findall(r"\"user_id\":\"(.*?)\"", rtext)
             mediaid = re.findall(patternmediaid, link)
             newheaders = headers.copy()
             newheaders['x-csrftoken'] = csrftoken
             newheaders['x-ig-app-id'] = appid[0]
-            params = {
-                'media_id': mediaid[0],
-                'reel_ids': reelsid[0],
-            }
-            realresp = await instadownloader.apiresponse('https://www.instagram.com/api/v1/feed/reels_media/', headers=newheaders, cookies=cookies, params=params)
+            realresp = await instadownloader.api_stories(headers=newheaders, cookies=cookies, reel_ids=reelsid[0], mediaid=mediaid[0])
             media = {}
             for index, item in enumerate(realresp["reels"][reelsid[0]]["items"]):
                 if item["pk"] == mediaid[0]:
