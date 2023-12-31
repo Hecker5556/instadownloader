@@ -153,7 +153,7 @@ class instadownloader:
             post = 'story'
             patternapp = r"\"X-IG-App-ID\":\"(.*?)\""
             patternreelid = r"\"props\":{\"user\":{\"id\":\"(.*?)\""
-            patternmediaid = r"https://(?:www\.)?instagram\.com/stories/(?:.*?)/(.*?)/"
+            patternmediaid = r"https://(?:www\.)?instagram\.com/stories/(?:.*?)/(.*?)/?$"
             appid = re.findall(patternapp, rtext)
             reelsid = re.findall(patternreelid, rtext)
             if not reelsid:
@@ -196,7 +196,7 @@ class instadownloader:
                     progress.close()
     async def download(link: str, sessionid: str = None, csrftoken: str = None, handle_merge: bool = True):
         """link: str - instagram link to a post or a reel (cant download stories yet)"""
-        a = await instadownloader.extract(link, sessionid, csrftoken)
+        a = await instadownloader.extract(link.split("?")[0], sessionid, csrftoken)
         if not a:
             print("error!")
             return False
