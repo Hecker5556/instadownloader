@@ -1,9 +1,8 @@
-import requests, json, re, os
+import json, re, os
 from tqdm.asyncio import tqdm
-from datetime import datetime, timedelta
+from datetime import datetime
 import argparse
 import env
-import logging
 import asyncio, aiohttp, aiofiles, traceback
 from yarl import URL
 
@@ -12,6 +11,9 @@ from yarl import URL
 class instadownloader:
     def __init__(self) -> None:
         pass
+    class no_media_id(Exception):
+        def __init__(self, *args: object) -> None:
+            super().__init__(*args)
     class badsessionid(Exception):
         def __init__(self, *args: object) -> None:
             super().__init__(*args)
@@ -38,15 +40,13 @@ class instadownloader:
         appid = re.findall(appidpattern, text)
         useridpattern = re.findall(useridpattern, text)
         return appid[0], useridpattern[0]
-    async def extract(link: str, sessionid: str  = None, csrftoken: str = None):
+    async def extract(link: str, sessionid: str  = None, csrftoken: str = None, prioritize_api: bool = False):
         if not sessionid:
             sessionid = env.sessionid
         if not csrftoken:
             csrftoken = env.csrftoken
-        logging.basicConfig(level=logging.DEBUG, format="%(message)s")
-        logging.debug(link)
+        print(link)
         allmedia = r'(\{\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":\{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisPostRootQueryRelayPreloader(?:.*?))</script>'
-        # musicmedia = r"({\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":{\"require\":\[\[\"PolarisQueryPreloaderCache\",\"add\",\[\],\[\{\"preloaderID\":\"891618966000029196\",\"data\":{\"__bbox\":{\"complete\":true,\"request\":{\"method\":\"GET\",\"url\":\"\\/api\\/v1\\/feed\\/user\\/{user_id}\\/\",\"params\":{\"path\":{\"user_id\":\"29474634220\"},\"query\":{\"count\":7}}},\"result\":{\"response\":\"{\\\"items\\\":(?:.*?))</script>"
         cookies = {
             'sessionid': sessionid,
             'csrftoken': csrftoken
@@ -61,7 +61,7 @@ class instadownloader:
         }
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.get(link, headers=headers, cookies=cookies) as r:
+                async with session.get(link, headers=headers, cookies=cookies if not prioritize_api else None) as r:
                     rtext = ""
                     while True:
                         chunk = await r.content.read(1024)
@@ -71,13 +71,105 @@ class instadownloader:
             except aiohttp.TooManyRedirects:
                 print('change your session ID! too many redirects')
                 raise instadownloader.badsessionid('change your session ID! too many redirects')
+        if prioritize_api:
+            patterncsrf = r"{\"csrf_token\":\"(.*?)\"}"
+            csrftoken2 = re.findall(patterncsrf, rtext)
+            if 'stories' not in link:
+                patternmediaid = r"content=\"instagram://media\?id=(.*?)\""
+                mediaid = re.findall(patternmediaid, rtext)
+                if not mediaid:
+                    print("private post, have to scrape")
+                    async with aiohttp.ClientSession() as session:
+                        try:
+                            async with session.get(link, headers=headers, cookies=cookies) as r:
+                                rtext = ""
+                                while True:
+                                    chunk = await r.content.read(1024)
+                                    if not chunk:
+                                        break
+                                    rtext += chunk.decode('utf-8')
+                        except aiohttp.TooManyRedirects:
+                            print('change your session ID! too many redirects')
+                            raise instadownloader.badsessionid('change your session ID! too many redirects')
+                    patternmediaid = r"content=\"instagram://media\?id=(.*?)\""
+                    mediaid = re.findall(patternmediaid, rtext)
+                if not mediaid:
+                    with open("response.txt", "w", encoding="utf-8") as f1:
+                        f1.write(rtext)
+                    raise instadownloader.no_media_id(f"couldnt find media id, response in response.txt")
+                newheaders = headers.copy()
+                newheaders['x-csrftoken'] = csrftoken
+                newheaders['x-ig-app-id'] = "936619743392459"
+                apiresp = await instadownloader.api_media(headers=newheaders, cookies=cookies, mediaid = mediaid[0])
+                media = {}
+                musicinfo= None
+                username = None
+                if apiresp["items"][0].get('carousel_media'):
+                    post = "multiple"
+                    for index, value in enumerate(apiresp["items"][0]["carousel_media"]):
+                        if value.get("video_versions"):
+                            for i in value["video_versions"]:
+                                media["mp4" + str(index)] = i["url"]
+                                break
+                        elif value.get("image_versions2"):
+                            media["jpg" + str(index)] = value["image_versions2"]["candidates"][0]['url']
+                else:
+                    value = apiresp["items"][0]
+                    if value.get("video_versions"):
+                        for i in value["video_versions"]:
+                            media["mp4"] = i["url"]
+                            post = 'reel'
+                            break
+                    elif value.get("image_versions2"):
+                        media["jpg"] = value["image_versions2"]["candidates"][0]['url']
+                        if value.get('music_metadata'):
+                            if value["music_metadata"].get('music_info'):
+                                downloadurl = value['music_metadata']["music_info"]["music_asset_info"]["fast_start_progressive_download_url"]
+                                durationms = value['music_metadata']["music_info"]["music_consumption_info"]["overlap_duration_in_ms"]
+                                startms = value['music_metadata']["music_info"]["music_consumption_info"]["audio_asset_start_time_in_ms"]
+                                endms = startms + durationms
+                                start = f"{int((startms/1000)//3600):02}:{int((startms/1000)//60 % 60):02}:{int((startms/1000) % 60):02}"
+                                end = f"{int((endms/1000)//3600):02}:{int((endms/1000)//60 % 60):02}:{int((endms/1000) % 60):02}"
+                                print(start, end)
+                                musicinfo = {"url": downloadurl, "start": start, "end": end, "duration": durationms/1000}
+                                media["music"] = musicinfo
+                        post = 'image'
+                if not username:
+                    username = apiresp["items"][0]["user"].get("username")
+                return media, username, post
+            else:
+                patternusername = r"https://(?:www\.)?instagram\.com/stories/(.*?)/(?:.*?)/?$"
+                patternuserid = r"\"props\":{\"id\":\"(.*?)\""
+                patternmediaid = r"https://(?:www\.)?instagram\.com/stories/(?:.*?)/(.*?)/?$"
+                userid = None
+                username = re.findall(patternusername, link)[0]
+                mediaid = re.findall(patternmediaid, link)
+                headers2 = headers.copy()
+                headers2["cookie"] = f'csrftoken={csrftoken2[0]}'
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(f"https://www.instagram.com/{username}/", headers=headers2) as r:
+                        respo = await r.text("utf-8")
+                        with open('response.txt', 'w', encoding="utf-8") as f1:
+                            f1.write(respo)
+                        userid = re.findall(patternuserid, respo)
+                newheaders = headers.copy()
+                newheaders['x-csrftoken'] = csrftoken
+                newheaders['x-ig-app-id'] = "936619743392459"
+                realresp = await instadownloader.api_stories(headers=newheaders, cookies=cookies, reel_ids=userid[0], mediaid=mediaid[0])
+                media = {}
+                for index, item in enumerate(realresp["reels"][userid[0]]["items"]):
+                    if item["pk"] == mediaid[0]:
+                        if item.get("video_versions"):
+                            media['mp4' + str(index)] = item["video_versions"][0]["url"]
+                        else:
+                            media['jpg' + str(index)] = item["image_versions2"]["candidates"][0]['url']
+                post = 'story'
+                return media, username, post
 
         if 'reel' not in link and 'stories' not in link:
             print('multiple')
             post = 'multiple'
             matches = re.findall(allmedia, rtext, re.MULTILINE)
-            # with open("response.txt", "w") as f1:
-            #     f1.write(rtext)
             if matches:
                 def find_key(json_obj, target_key):
                     if isinstance(json_obj, dict):
@@ -141,7 +233,6 @@ class instadownloader:
 
         elif 'reel' in link:
             post = 'reel'
-            logging.debug('extracting video')
             pattern = r'\"video_versions\":(.*?\])'
             matches = re.findall(pattern, rtext, re.MULTILINE)
             thejson = json.loads(matches[0])
@@ -194,9 +285,9 @@ class instadownloader:
                         await f1.write(chunk)
                         progress.update(len(chunk))
                     progress.close()
-    async def download(link: str, sessionid: str = None, csrftoken: str = None, handle_merge: bool = True):
+    async def download(link: str, sessionid: str = None, csrftoken: str = None, handle_merge: bool = True, prioritize_api: bool = False):
         """link: str - instagram link to a post or a reel (cant download stories yet)"""
-        a = await instadownloader.extract(link.split("?")[0], sessionid, csrftoken)
+        a = await instadownloader.extract(link.split("?")[0], sessionid, csrftoken, prioritize_api)
         if not a:
             print("error!")
             return False
@@ -229,7 +320,7 @@ class instadownloader:
             command = f"ffmpeg -i {files2['audio']} -ss {musicinfo['start']} -v error -to {musicinfo['end']} -c copy {filename}".split()
             subprocess.run(command)
             outputfile = files2['image'].replace('jpg', 'mp4')
-            command = f"ffmpeg -r 2 -loop 1 -i {files2['image']} -i {filename} -v error -c:a copy -rc-lookahead 6 -t {musicinfo['duration']} {outputfile}".split()
+            command = f"ffmpeg -r 2 -loop 1 -i {files2['image']} -i {filename} -vf crop=trunc(iw/2)*2:trunc(ih/2)*2 -v error -c:a copy -rc-lookahead 6 -t {musicinfo['duration']} {outputfile}".split()
             subprocess.run(command)
             for key, value in files2.items():
                 os.remove(value)
@@ -250,10 +341,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='download instagram posts and reels')
     parser.add_argument("link", type=str, help='link to instagram post or reel')
     parser.add_argument("--handle-merge", "-m", action="store_true", help="whether to not merge and let you do it")
+    parser.add_argument("--prioritize-api", "-api", action="store_true", help="whether to primarily use api for public posts")
     args = parser.parse_args()
     if '?' in args.link:
         args.link = args.link.split('?')[0]
-    result = asyncio.run(instadownloader.download(args.link, handle_merge=not args.handle_merge))
+    result = asyncio.run(instadownloader.download(args.link, handle_merge=not args.handle_merge, prioritize_api=args.prioritize_api))
     if not result:
         print('error occured')
     else:
