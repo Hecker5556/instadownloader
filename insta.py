@@ -156,9 +156,9 @@ class instadownloader:
                         if not chunk:
                             break
                         rtext += chunk.decode('utf-8')
-            csrftoken2 = re.findall(patterncsrf, rtext)
+            csrftoken2 = re.findall(patterncsrf, rtext)[0]
             async with aiofiles.open("tempcsrf.json", "w") as f1:
-                await f1.write(json.dumps({"csrf": csrftoken2[0], "expire": (datetime.now() + timedelta(days=7)).isoformat()}))
+                await f1.write(json.dumps({"csrf": csrftoken2, "expire": (datetime.now() + timedelta(days=7)).isoformat()}))
         else:
             async with aiofiles.open("tempcsrf.json", "r") as f1:
                 the = json.loads(await f1.read())
@@ -171,16 +171,16 @@ class instadownloader:
                                 if not chunk:
                                     break
                                 rtext += chunk.decode('utf-8')
-                    csrftoken2 = re.findall(patterncsrf, rtext)
+                    csrftoken2 = re.findall(patterncsrf, rtext)[0]
                     async with aiofiles.open("tempcsrf.json", "w") as f1:
-                        await f1.write(json.dumps({"csrf": csrftoken2[0], "expire": (datetime.now() + timedelta(days=7)).isoformat()}))
+                        await f1.write(json.dumps({"csrf": csrftoken2, "expire": (datetime.now() + timedelta(days=7)).isoformat()}))
                 else:
                     csrftoken2 = the.get('csrf')
 
         if 'stories' not in link:
             if public_only:
                 
-                publicmedia = await instadownloader.public_media(link, csrftoken2[0])
+                publicmedia = await instadownloader.public_media(link, csrftoken2)
                 if publicmedia:
                     media, username, post = instadownloader.public_media_extractor(publicmedia)
                     return media, username, post
