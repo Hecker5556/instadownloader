@@ -6,7 +6,7 @@ import env
 import asyncio, aiohttp, aiofiles, traceback
 from yarl import URL
 from typing import Literal
-
+from aiohttp_socks import ProxyConnector
 
 
 class instadownloader:
@@ -18,7 +18,15 @@ class instadownloader:
     class badsessionid(Exception):
         def __init__(self, *args: object) -> None:
             super().__init__(*args)
-    async def public_media(link: str, csrftoken: str) -> (dict | Literal['False']):
+    def giveconnector(proxy):
+        connector = aiohttp.TCPConnector()
+        if proxy:
+            if "socks" in proxy:
+                connector = ProxyConnector.from_url(proxy)
+            else:
+                connector = aiohttp.TCPConnector(proxy=proxy)
+        return connector
+    async def public_media(link: str, csrftoken: str, proxy : str) -> (dict | Literal['False']):
         patternshortcode = r"https://(?:www)?\.instagram\.com/(?:reels||p||stories)/(.*?)/?$"
         shortcode = re.findall(patternshortcode, link)[0]
         cookies = {
@@ -37,7 +45,7 @@ class instadownloader:
             'x-csrftoken': csrftoken,
             'x-ig-app-id': '936619743392459',
         }
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
             data = {'variables': '{"shortcode":"%s"}' % shortcode,
                     'doc_id': '10015901848480474'}
             async with session.post("https://www.instagram.com/api/graphql", data=data, headers=headers, cookies=cookies) as r:
@@ -73,18 +81,18 @@ class instadownloader:
                 post = "single"
                 media["jpg"] = publicmedia["display_resources"][-1]['src']
         return media, username, post
-    async def apiresponse(link: str, headers: dict, cookies: dict, params: dict = None):
-        async with aiohttp.ClientSession() as session:
+    async def apiresponse(link: str, headers: dict, cookies: dict, params: dict = None, proxy: str = None):
+        async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
             async with session.get(link, headers=headers, cookies=cookies, params=params) as r:
                 response = await r.text(encoding="utf-8")
                 return json.loads(response)
-    async def api_media(headers: dict, cookies: dict, mediaid: int):
-        async with aiohttp.ClientSession() as session:
+    async def api_media(headers: dict, cookies: dict, mediaid: int, proxy: str = None):
+        async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
             async with session.get(f"https://www.instagram.com/api/v1/media/{mediaid}/info", headers = headers, cookies=cookies) as r:
                 r = await r.text(encoding="utf-8")
                 return json.loads(r)
-    async def api_stories(headers: dict, cookies: dict, reel_ids: int, mediaid: int):
-        async with aiohttp.ClientSession() as session:
+    async def api_stories(headers: dict, cookies: dict, reel_ids: int, mediaid: int, proxy: str = None):
+        async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
             params = {
                 'media_id': mediaid,
                 'reel_ids': reel_ids,
@@ -96,7 +104,7 @@ class instadownloader:
         appid = re.findall(appidpattern, text)
         useridpattern = re.findall(useridpattern, text)
         return appid[0], useridpattern[0]
-    async def extract(link: str, sessionid: str  = None, csrftoken: str = None, public_only: bool = False):
+    async def extract(link: str, sessionid: str  = None, csrftoken: str = None, public_only: bool = False, proxy: str = None):
         """
         link (str) - link to post/story/reel
         sessionid (str, optional) - what sessionid to use (if needed)
@@ -148,7 +156,7 @@ class instadownloader:
 
         patterncsrf = r"{\"csrf_token\":\"(.*?)\"}"
         if not os.path.exists("tempcsrf.json"):
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
                 async with session.get(link, headers=headers, cookies=None) as r:
                     rtext = ""
                     while True:
@@ -163,7 +171,7 @@ class instadownloader:
             async with aiofiles.open("tempcsrf.json", "r") as f1:
                 the = json.loads(await f1.read())
                 if datetime.now() > datetime.fromisoformat(the["expire"]):
-                    async with aiohttp.ClientSession() as session:
+                    async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
                         async with session.get(link, headers=headers, cookies=None) as r:
                             rtext = ""
                             while True:
@@ -194,7 +202,7 @@ class instadownloader:
                     mediaid = re.findall(patternmediaid, rtext)
                     if not mediaid:
                         print("private post, have to scrape")
-                        async with aiohttp.ClientSession() as session:
+                        async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
                             try:
                                 async with session.get(link, headers=headers, cookies=cookies) as r:
                                     rtext = ""
@@ -215,7 +223,7 @@ class instadownloader:
                     newheaders = headers.copy()
                     newheaders['x-csrftoken'] = csrftoken
                     newheaders['x-ig-app-id'] = "936619743392459"
-                    apiresp = await instadownloader.api_media(headers=newheaders, cookies=cookies, mediaid = mediaid[0])
+                    apiresp = await instadownloader.api_media(headers=newheaders, cookies=cookies, mediaid = mediaid[0], proxy=proxy)
                     media = {}
                     musicinfo= None
                     username = None
@@ -265,14 +273,14 @@ class instadownloader:
             mediaid = re.findall(patternmediaid, link)
             headers2 = headers.copy()
             headers2["cookie"] = f'csrftoken={csrftoken2[0]}'
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
                 async with session.get(f"https://www.instagram.com/{username}/", headers=headers2) as r:
                     respo = await r.text("utf-8")
                     userid = re.findall(patternuserid, respo)
             newheaders = headers.copy()
             newheaders['x-csrftoken'] = csrftoken
             newheaders['x-ig-app-id'] = "936619743392459"
-            realresp = await instadownloader.api_stories(headers=newheaders, cookies=cookies, reel_ids=userid[0], mediaid=mediaid[0])
+            realresp = await instadownloader.api_stories(headers=newheaders, cookies=cookies, reel_ids=userid[0], mediaid=mediaid[0], proxy=proxy)
             media = {}
             try:
                 for index, item in enumerate(realresp["reels"][userid[0]]["items"]):
@@ -286,7 +294,7 @@ class instadownloader:
             except Exception as e:
                 print(f"couldnt fetch using api, will try manual:\n{e}")
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
             try:
                 async with session.get(link, headers=headers, cookies=cookies) as r:
                     rtext = ""
@@ -328,7 +336,7 @@ class instadownloader:
                     newheaders = headers.copy()
                     newheaders['x-csrftoken'] = csrftoken
                     newheaders['x-ig-app-id'] = appid
-                    apiresp = await instadownloader.api_media(headers=newheaders, cookies=cookies, mediaid = mediaid[0])
+                    apiresp = await instadownloader.api_media(headers=newheaders, cookies=cookies, mediaid = mediaid[0], proxy=proxy)
                     # with open('response.json', 'w') as f1:
                     #     json.dump(apiresp, f1, indent=4)
                     print('actually single image')
@@ -385,7 +393,7 @@ class instadownloader:
             newheaders = headers.copy()
             newheaders['x-csrftoken'] = csrftoken
             newheaders['x-ig-app-id'] = appid[0]
-            realresp = await instadownloader.api_stories(headers=newheaders, cookies=cookies, reel_ids=reelsid[0], mediaid=mediaid[0])
+            realresp = await instadownloader.api_stories(headers=newheaders, cookies=cookies, reel_ids=reelsid[0], mediaid=mediaid[0], proxy=proxy)
             media = {}
             for index, item in enumerate(realresp["reels"][reelsid[0]]["items"]):
                 if item["pk"] == mediaid[0]:
@@ -404,9 +412,9 @@ class instadownloader:
         usercounts = sorted(usercounts.items(), key=lambda x: x[1], reverse=True)
         username = usercounts[0][0]
         return media, username, post
-    async def downloadworker(link: str, filename: str):
+    async def downloadworker(link: str, filename: str, proxy: str = None):
         async with aiofiles.open(filename, 'wb') as f1:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
                 async with session.get(URL(link, encoded=True)) as response:
                     totalsize = int(response.headers.get('content-length'))
                     progress = tqdm(total=totalsize, unit='iB', unit_scale=True)
@@ -417,9 +425,9 @@ class instadownloader:
                         await f1.write(chunk)
                         progress.update(len(chunk))
                     progress.close()
-    async def download(link: str, sessionid: str = None, csrftoken: str = None, handle_merge: bool = True, public_only: bool = False):
+    async def download(link: str, sessionid: str = None, csrftoken: str = None, handle_merge: bool = True, public_only: bool = False, proxy: str = None):
         """link: str - instagram link to a post, reel, story"""
-        a = await instadownloader.extract(link.split("?")[0], sessionid, csrftoken, public_only)
+        a = await instadownloader.extract(link.split("?")[0], sessionid, csrftoken, public_only, proxy)
         if not a:
             print("error!")
             return False
@@ -478,10 +486,11 @@ if __name__ == '__main__':
     parser.add_argument("link", type=str, help='link to instagram post or reel')
     parser.add_argument("--handle-merge", "-m", action="store_true", help="whether to not merge and let you do it")
     parser.add_argument("--public-only", "-api", action="store_true", help="whether to use public api for posts")
+    parser.add_argument("--proxy", "-p", type=str, help="proxy to use")
     args = parser.parse_args()
     if '?' in args.link:
         args.link = args.link.split('?')[0]
-    result = asyncio.run(instadownloader.download(args.link, handle_merge=not args.handle_merge, public_only=args.public_only))
+    result = asyncio.run(instadownloader.download(args.link, handle_merge=not args.handle_merge, public_only=args.public_only, proxy=args.proxy))
     if not result:
         print('error occured')
     else:
