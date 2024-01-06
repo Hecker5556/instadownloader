@@ -1,10 +1,11 @@
 import json, re, os
 from tqdm.asyncio import tqdm
-from datetime import datetime
+from datetime import datetime, timedelta
 import argparse
 import env
 import asyncio, aiohttp, aiofiles, traceback
 from yarl import URL
+from typing import Literal
 
 
 
@@ -17,6 +18,61 @@ class instadownloader:
     class badsessionid(Exception):
         def __init__(self, *args: object) -> None:
             super().__init__(*args)
+    async def public_media(link: str, csrftoken: str) -> (dict | Literal['False']):
+        patternshortcode = r"https://(?:www)?\.instagram\.com/(?:reels||p||stories)/(.*?)/?$"
+        shortcode = re.findall(patternshortcode, link)[0]
+        cookies = {
+            'csrftoken': csrftoken,
+        }
+        headers = {
+            'authority': 'www.instagram.com',
+            'accept': '*/*',
+            'accept-language': 'en-US,en;q=0.6',
+            'content-type': 'application/x-www-form-urlencoded',
+            'origin': 'https://www.instagram.com',
+            'referer': link,
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'x-csrftoken': csrftoken,
+            'x-ig-app-id': '936619743392459',
+        }
+        async with aiohttp.ClientSession() as session:
+            data = {'variables': '{"shortcode":"%s"}' % shortcode,
+                    'doc_id': '10015901848480474'}
+            async with session.post("https://www.instagram.com/api/graphql", data=data, headers=headers, cookies=cookies) as r:
+                rtext = await r.text(encoding="utf-8")
+                try:
+                    return json.loads(rtext)
+                except:
+                    return False
+    def public_media_extractor(publicmedia: dict, isnode: bool = False):
+        media = {}
+        username = None
+        if not isnode:
+            if publicmedia["data"]["xdt_shortcode_media"].get("edge_sidecar_to_children"):
+                post = "multiple"
+                for index, slide in enumerate(publicmedia["data"]["xdt_shortcode_media"].get("edge_sidecar_to_children").get("edges")):
+                    md, _, pst = instadownloader.public_media_extractor(slide["node"], True)
+                    if pst == "reel":
+                        media["mp4" + str(index)] = md.get("mp4")
+                    elif pst == "single":
+                        media["jpg" + str(index)] = md.get("jpg")
+            elif publicmedia["data"]["xdt_shortcode_media"].get("video_url"):
+                post = "reel"
+                media["mp4"] = publicmedia["data"]["xdt_shortcode_media"]["video_url"]
+            elif publicmedia["data"]["xdt_shortcode_media"]['is_video'] == False:
+                post = "single"
+                media["jpg"] = publicmedia["data"]["xdt_shortcode_media"]["display_resources"][-1]['src']
+            username = publicmedia["data"]["xdt_shortcode_media"]["owner"]["username"]
+        else:
+            if publicmedia.get("video_url"):
+                post = "reel"
+                media["mp4"] = publicmedia.get("video_url")
+            elif publicmedia["is_video"] == False:
+                post = "single"
+                media["jpg"] = publicmedia["display_resources"][-1]['src']
+        return media, username, post
     async def apiresponse(link: str, headers: dict, cookies: dict, params: dict = None):
         async with aiohttp.ClientSession() as session:
             async with session.get(link, headers=headers, cookies=cookies, params=params) as r:
@@ -40,7 +96,35 @@ class instadownloader:
         appid = re.findall(appidpattern, text)
         useridpattern = re.findall(useridpattern, text)
         return appid[0], useridpattern[0]
-    async def extract(link: str, sessionid: str  = None, csrftoken: str = None, prioritize_api: bool = False):
+    async def extract(link: str, sessionid: str  = None, csrftoken: str = None, public_only: bool = False):
+        """
+        link (str) - link to post/story/reel
+        sessionid (str, optional) - what sessionid to use (if needed)
+        csrftoken (str, optional) - what csrftoken to use (if needed)
+        public_only (bool, False) - whether to only use the public graphql api (no music to single image posts and no private posts)
+        
+        ## Which post type requires credentials?
+
+        -Stories
+        
+        -Single image posts with music
+        
+        -Private posts
+
+        ## Which do not?
+
+        -Single images with no music
+        
+        -Reels
+        
+        -Posts
+
+        ## Why does it matter?
+        
+        Instagram tends to detect this activity and puts a captcha if used too often :(
+        
+        So for any public downloader youre doing, use public_only
+        """
         if not sessionid:
             sessionid = env.sessionid
         if not csrftoken:
@@ -59,9 +143,152 @@ class instadownloader:
             'sec-fetch-mode': 'navigate',
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
+        media = {}
+
+
+        patterncsrf = r"{\"csrf_token\":\"(.*?)\"}"
+        if not os.path.exists("tempcsrf.json"):
+            async with aiohttp.ClientSession() as session:
+                async with session.get(link, headers=headers, cookies=None) as r:
+                    rtext = ""
+                    while True:
+                        chunk = await r.content.read(1024)
+                        if not chunk:
+                            break
+                        rtext += chunk.decode('utf-8')
+            csrftoken2 = re.findall(patterncsrf, rtext)
+            async with aiofiles.open("tempcsrf.json", "w") as f1:
+                await f1.write(json.dumps({"csrf": csrftoken2[0], "expire": (datetime.now() + timedelta(days=7)).isoformat()}))
+        else:
+            async with aiofiles.open("tempcsrf.json", "r") as f1:
+                the = json.loads(await f1.read())
+                if datetime.now() > datetime.fromisoformat(the["expire"]):
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(link, headers=headers, cookies=None) as r:
+                            rtext = ""
+                            while True:
+                                chunk = await r.content.read(1024)
+                                if not chunk:
+                                    break
+                                rtext += chunk.decode('utf-8')
+                    csrftoken2 = re.findall(patterncsrf, rtext)
+                    async with aiofiles.open("tempcsrf.json", "w") as f1:
+                        await f1.write(json.dumps({"csrf": csrftoken2[0], "expire": (datetime.now() + timedelta(days=7)).isoformat()}))
+                else:
+                    csrftoken2 = the.get('csrf')
+
+        if 'stories' not in link:
+            if public_only:
+                
+                publicmedia = await instadownloader.public_media(link, csrftoken2[0])
+                if publicmedia:
+                    media, username, post = instadownloader.public_media_extractor(publicmedia)
+                    return media, username, post
+                else:
+                    return {"status": 1, "message": "couldnt fetch using graphql public api"}
+            else:
+
+                try:
+                    
+                    patternmediaid = r"content=\"instagram://media\?id=(.*?)\""
+                    mediaid = re.findall(patternmediaid, rtext)
+                    if not mediaid:
+                        print("private post, have to scrape")
+                        async with aiohttp.ClientSession() as session:
+                            try:
+                                async with session.get(link, headers=headers, cookies=cookies) as r:
+                                    rtext = ""
+                                    while True:
+                                        chunk = await r.content.read(1024)
+                                        if not chunk:
+                                            break
+                                        rtext += chunk.decode('utf-8')
+                            except aiohttp.TooManyRedirects:
+                                print('change your session ID! too many redirects')
+                                raise instadownloader.badsessionid('change your session ID! too many redirects')
+                        patternmediaid = r"content=\"instagram://media\?id=(.*?)\""
+                        mediaid = re.findall(patternmediaid, rtext)
+                    if not mediaid:
+                        with open("response.txt", "w", encoding="utf-8") as f1:
+                            f1.write(rtext)
+                        raise instadownloader.no_media_id(f"couldnt find media id, response in response.txt")
+                    newheaders = headers.copy()
+                    newheaders['x-csrftoken'] = csrftoken
+                    newheaders['x-ig-app-id'] = "936619743392459"
+                    apiresp = await instadownloader.api_media(headers=newheaders, cookies=cookies, mediaid = mediaid[0])
+                    media = {}
+                    musicinfo= None
+                    username = None
+                    if apiresp["items"][0].get('carousel_media'):
+                        post = "multiple"
+                        for index, value in enumerate(apiresp["items"][0]["carousel_media"]):
+                            if value.get("video_versions"):
+                                for i in value["video_versions"]:
+                                    media["mp4" + str(index)] = i["url"]
+                                    break
+                            elif value.get("image_versions2"):
+                                media["jpg" + str(index)] = value["image_versions2"]["candidates"][0]['url']
+                    else:
+                        value = apiresp["items"][0]
+                        if value.get("video_versions"):
+                            for i in value["video_versions"]:
+                                media["mp4"] = i["url"]
+                                post = 'reel'
+                                break
+                        elif value.get("image_versions2"):
+                            media["jpg"] = value["image_versions2"]["candidates"][0]['url']
+                            if value.get('music_metadata'):
+                                if value["music_metadata"].get('music_info'):
+                                    downloadurl = value['music_metadata']["music_info"]["music_asset_info"]["fast_start_progressive_download_url"]
+                                    durationms = value['music_metadata']["music_info"]["music_consumption_info"]["overlap_duration_in_ms"]
+                                    startms = value['music_metadata']["music_info"]["music_consumption_info"]["audio_asset_start_time_in_ms"]
+                                    endms = startms + durationms
+                                    start = f"{int((startms/1000)//3600):02}:{int((startms/1000)//60 % 60):02}:{int((startms/1000) % 60):02}"
+                                    end = f"{int((endms/1000)//3600):02}:{int((endms/1000)//60 % 60):02}:{int((endms/1000) % 60):02}"
+                                    print(start, end)
+                                    musicinfo = {"url": downloadurl, "start": start, "end": end, "duration": durationms/1000}
+                                    media["music"] = musicinfo
+                            post = 'image'
+                    if not username:
+                        username = apiresp["items"][0]["user"].get("username")
+                    return media, username, post
+                except Exception as e:
+                    print(f"couldnt fetch using api, will try manual:\n{e}")
+        else:
+            if public_only:
+                return {"status": 1, "message": "cant use public API with stories"}
+            patternusername = r"https://(?:www\.)?instagram\.com/stories/(.*?)/(?:.*?)/?$"
+            patternuserid = r"\"props\":{\"id\":\"(.*?)\""
+            patternmediaid = r"https://(?:www\.)?instagram\.com/stories/(?:.*?)/(.*?)/?$"
+            userid = None
+            username = re.findall(patternusername, link)[0]
+            mediaid = re.findall(patternmediaid, link)
+            headers2 = headers.copy()
+            headers2["cookie"] = f'csrftoken={csrftoken2[0]}'
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"https://www.instagram.com/{username}/", headers=headers2) as r:
+                    respo = await r.text("utf-8")
+                    userid = re.findall(patternuserid, respo)
+            newheaders = headers.copy()
+            newheaders['x-csrftoken'] = csrftoken
+            newheaders['x-ig-app-id'] = "936619743392459"
+            realresp = await instadownloader.api_stories(headers=newheaders, cookies=cookies, reel_ids=userid[0], mediaid=mediaid[0])
+            media = {}
+            try:
+                for index, item in enumerate(realresp["reels"][userid[0]]["items"]):
+                    if item["pk"] == mediaid[0]:
+                        if item.get("video_versions"):
+                            media['mp4' + str(index)] = item["video_versions"][0]["url"]
+                        else:
+                            media['jpg' + str(index)] = item["image_versions2"]["candidates"][0]['url']
+                post = 'story'
+                return media, username, post
+            except Exception as e:
+                print(f"couldnt fetch using api, will try manual:\n{e}")
+
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.get(link, headers=headers, cookies=cookies if not prioritize_api else None) as r:
+                async with session.get(link, headers=headers, cookies=cookies) as r:
                     rtext = ""
                     while True:
                         chunk = await r.content.read(1024)
@@ -71,101 +298,6 @@ class instadownloader:
             except aiohttp.TooManyRedirects:
                 print('change your session ID! too many redirects')
                 raise instadownloader.badsessionid('change your session ID! too many redirects')
-        if prioritize_api:
-            patterncsrf = r"{\"csrf_token\":\"(.*?)\"}"
-            csrftoken2 = re.findall(patterncsrf, rtext)
-            if 'stories' not in link:
-                patternmediaid = r"content=\"instagram://media\?id=(.*?)\""
-                mediaid = re.findall(patternmediaid, rtext)
-                if not mediaid:
-                    print("private post, have to scrape")
-                    async with aiohttp.ClientSession() as session:
-                        try:
-                            async with session.get(link, headers=headers, cookies=cookies) as r:
-                                rtext = ""
-                                while True:
-                                    chunk = await r.content.read(1024)
-                                    if not chunk:
-                                        break
-                                    rtext += chunk.decode('utf-8')
-                        except aiohttp.TooManyRedirects:
-                            print('change your session ID! too many redirects')
-                            raise instadownloader.badsessionid('change your session ID! too many redirects')
-                    patternmediaid = r"content=\"instagram://media\?id=(.*?)\""
-                    mediaid = re.findall(patternmediaid, rtext)
-                if not mediaid:
-                    with open("response.txt", "w", encoding="utf-8") as f1:
-                        f1.write(rtext)
-                    raise instadownloader.no_media_id(f"couldnt find media id, response in response.txt")
-                newheaders = headers.copy()
-                newheaders['x-csrftoken'] = csrftoken
-                newheaders['x-ig-app-id'] = "936619743392459"
-                apiresp = await instadownloader.api_media(headers=newheaders, cookies=cookies, mediaid = mediaid[0])
-                media = {}
-                musicinfo= None
-                username = None
-                if apiresp["items"][0].get('carousel_media'):
-                    post = "multiple"
-                    for index, value in enumerate(apiresp["items"][0]["carousel_media"]):
-                        if value.get("video_versions"):
-                            for i in value["video_versions"]:
-                                media["mp4" + str(index)] = i["url"]
-                                break
-                        elif value.get("image_versions2"):
-                            media["jpg" + str(index)] = value["image_versions2"]["candidates"][0]['url']
-                else:
-                    value = apiresp["items"][0]
-                    if value.get("video_versions"):
-                        for i in value["video_versions"]:
-                            media["mp4"] = i["url"]
-                            post = 'reel'
-                            break
-                    elif value.get("image_versions2"):
-                        media["jpg"] = value["image_versions2"]["candidates"][0]['url']
-                        if value.get('music_metadata'):
-                            if value["music_metadata"].get('music_info'):
-                                downloadurl = value['music_metadata']["music_info"]["music_asset_info"]["fast_start_progressive_download_url"]
-                                durationms = value['music_metadata']["music_info"]["music_consumption_info"]["overlap_duration_in_ms"]
-                                startms = value['music_metadata']["music_info"]["music_consumption_info"]["audio_asset_start_time_in_ms"]
-                                endms = startms + durationms
-                                start = f"{int((startms/1000)//3600):02}:{int((startms/1000)//60 % 60):02}:{int((startms/1000) % 60):02}"
-                                end = f"{int((endms/1000)//3600):02}:{int((endms/1000)//60 % 60):02}:{int((endms/1000) % 60):02}"
-                                print(start, end)
-                                musicinfo = {"url": downloadurl, "start": start, "end": end, "duration": durationms/1000}
-                                media["music"] = musicinfo
-                        post = 'image'
-                if not username:
-                    username = apiresp["items"][0]["user"].get("username")
-                return media, username, post
-            else:
-                patternusername = r"https://(?:www\.)?instagram\.com/stories/(.*?)/(?:.*?)/?$"
-                patternuserid = r"\"props\":{\"id\":\"(.*?)\""
-                patternmediaid = r"https://(?:www\.)?instagram\.com/stories/(?:.*?)/(.*?)/?$"
-                userid = None
-                username = re.findall(patternusername, link)[0]
-                mediaid = re.findall(patternmediaid, link)
-                headers2 = headers.copy()
-                headers2["cookie"] = f'csrftoken={csrftoken2[0]}'
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(f"https://www.instagram.com/{username}/", headers=headers2) as r:
-                        respo = await r.text("utf-8")
-                        with open('response.txt', 'w', encoding="utf-8") as f1:
-                            f1.write(respo)
-                        userid = re.findall(patternuserid, respo)
-                newheaders = headers.copy()
-                newheaders['x-csrftoken'] = csrftoken
-                newheaders['x-ig-app-id'] = "936619743392459"
-                realresp = await instadownloader.api_stories(headers=newheaders, cookies=cookies, reel_ids=userid[0], mediaid=mediaid[0])
-                media = {}
-                for index, item in enumerate(realresp["reels"][userid[0]]["items"]):
-                    if item["pk"] == mediaid[0]:
-                        if item.get("video_versions"):
-                            media['mp4' + str(index)] = item["video_versions"][0]["url"]
-                        else:
-                            media['jpg' + str(index)] = item["image_versions2"]["candidates"][0]['url']
-                post = 'story'
-                return media, username, post
-
         if 'reel' not in link and 'stories' not in link:
             print('multiple')
             post = 'multiple'
@@ -285,12 +417,16 @@ class instadownloader:
                         await f1.write(chunk)
                         progress.update(len(chunk))
                     progress.close()
-    async def download(link: str, sessionid: str = None, csrftoken: str = None, handle_merge: bool = True, prioritize_api: bool = False):
-        """link: str - instagram link to a post or a reel (cant download stories yet)"""
-        a = await instadownloader.extract(link.split("?")[0], sessionid, csrftoken, prioritize_api)
+    async def download(link: str, sessionid: str = None, csrftoken: str = None, handle_merge: bool = True, public_only: bool = False):
+        """link: str - instagram link to a post, reel, story"""
+        a = await instadownloader.extract(link.split("?")[0], sessionid, csrftoken, public_only)
         if not a:
             print("error!")
             return False
+        if isinstance(a, dict) and a.get('status'):
+            if a['status'] != 0:
+                print(a)
+                return a
         media, username, post = a[0], a[1], a[2]
         if not media:
             print('some error occured')
@@ -341,11 +477,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='download instagram posts and reels')
     parser.add_argument("link", type=str, help='link to instagram post or reel')
     parser.add_argument("--handle-merge", "-m", action="store_true", help="whether to not merge and let you do it")
-    parser.add_argument("--prioritize-api", "-api", action="store_true", help="whether to primarily use api for public posts")
+    parser.add_argument("--public-only", "-api", action="store_true", help="whether to use public api for posts")
     args = parser.parse_args()
     if '?' in args.link:
         args.link = args.link.split('?')[0]
-    result = asyncio.run(instadownloader.download(args.link, handle_merge=not args.handle_merge, prioritize_api=args.prioritize_api))
+    result = asyncio.run(instadownloader.download(args.link, handle_merge=not args.handle_merge, public_only=args.public_only))
     if not result:
         print('error occured')
     else:
