@@ -199,6 +199,14 @@ class instadownloader:
                 try:
                     
                     patternmediaid = r"content=\"instagram://media\?id=(.*?)\""
+                    async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
+                                    async with session.get(link, headers=headers, cookies=None) as r:
+                                        rtext = ""
+                                        while True:
+                                            chunk = await r.content.read(1024)
+                                            if not chunk:
+                                                break
+                                            rtext += chunk.decode('utf-8')
                     mediaid = re.findall(patternmediaid, rtext)
                     if not mediaid:
                         print("private post, have to scrape")
