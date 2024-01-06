@@ -26,7 +26,7 @@ class instadownloader:
             else:
                 connector = aiohttp.TCPConnector(proxy=proxy)
         return connector
-    async def public_media(link: str, csrftoken: str, proxy : str) -> (dict | Literal['False']):
+    async def public_media(link: str, csrftoken: str, proxy : str = None) -> (dict | Literal['False']):
         patternshortcode = r"https://(?:www)?\.instagram\.com/(?:reels||p||stories)/(.*?)/?$"
         shortcode = re.findall(patternshortcode, link)[0]
         cookies = {
@@ -188,7 +188,7 @@ class instadownloader:
         if 'stories' not in link:
             if public_only:
                 
-                publicmedia = await instadownloader.public_media(link, csrftoken2)
+                publicmedia = await instadownloader.public_media(link, csrftoken2, proxy)
                 if publicmedia:
                     media, username, post = instadownloader.public_media_extractor(publicmedia)
                     return media, username, post
