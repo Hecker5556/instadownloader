@@ -26,7 +26,7 @@ class instadownloader:
             else:
                 connector = aiohttp.TCPConnector(proxy=proxy)
         return connector
-    async def public_media(link: str, csrftoken: str, proxy : str = None) -> (dict | Literal['False']):
+    async def public_media(link: str, csrftoken: str, proxy : str = None) -> dict:
         patternshortcode = r"https://(?:www)?\.instagram\.com/(?:reels||p||stories||reel||story)/(.*?)/?$"
         shortcode = re.findall(patternshortcode, link)[0]
         cookies = {
@@ -53,7 +53,7 @@ class instadownloader:
                 try:
                     return json.loads(rtext)
                 except:
-                    return False
+                    return {"errorResponse": rtext, "status": r.status}
     def public_media_extractor(publicmedia: dict, isnode: bool = False):
         media = {}
         username = None
@@ -189,11 +189,11 @@ class instadownloader:
             if public_only:
                 
                 publicmedia = await instadownloader.public_media(link, csrftoken2, proxy)
-                if publicmedia:
+                if not publicmedia.get("errorResponse"):
                     media, username, post = instadownloader.public_media_extractor(publicmedia)
                     return media, username, post
                 else:
-                    return {"status": 1, "message": "couldnt fetch using graphql public api"}
+                    return {"status": 1, "message": "couldnt fetch using graphql public api", "response": publicmedia.get("errorResponse"), "status": publicmedia.get('status')}
             else:
 
                 try:
