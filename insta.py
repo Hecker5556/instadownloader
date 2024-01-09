@@ -166,7 +166,7 @@ class instadownloader:
                         rtext += chunk.decode('utf-8')
             csrftoken2 = re.findall(patterncsrf, rtext)[0]
             async with aiofiles.open("tempcsrf.json", "w") as f1:
-                await f1.write(json.dumps({"csrf": csrftoken2, "expire": (datetime.now() + timedelta(days=7)).isoformat()}))
+                await f1.write(json.dumps({"csrf": csrftoken2, "expire": (datetime.now() + timedelta(hours=6)).isoformat()}))
         else:
             async with aiofiles.open("tempcsrf.json", "r") as f1:
                 the = json.loads(await f1.read())
@@ -181,7 +181,7 @@ class instadownloader:
                                 rtext += chunk.decode('utf-8')
                     csrftoken2 = re.findall(patterncsrf, rtext)[0]
                     async with aiofiles.open("tempcsrf.json", "w") as f1:
-                        await f1.write(json.dumps({"csrf": csrftoken2, "expire": (datetime.now() + timedelta(days=7)).isoformat()}))
+                        await f1.write(json.dumps({"csrf": csrftoken2, "expire": (datetime.now() + timedelta(hours=6)).isoformat()}))
                 else:
                     csrftoken2 = the.get('csrf')
 
