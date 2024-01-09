@@ -81,6 +81,55 @@ class instadownloader:
                 post = "single"
                 media["jpg"] = publicmedia["display_resources"][-1]['src']
         return media, username, post
+    async def embed_captioned_response(link: str, proxy: str = None):
+        async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
+            patternshortcode = r"https://(?:www)?\.instagram\.com/(?:reels||p||stories||reel||story)/(.*?)/?$"
+            shortcode = re.findall(patternshortcode, link)[0]
+            headers = {
+                'authority': 'www.instagram.com',
+                'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'accept-language': 'en-US,en;q=0.8',
+                'cache-control': 'max-age=0',
+                'referer': f'https://www.instagram.com/p/{shortcode}/embed/captioned/',
+                'sec-fetch-mode': 'navigate',
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            }
+            async with session.get(f'https://www.instagram.com/p/{shortcode}/embed/captioned/', headers=headers) as r:
+                rtext = await r.text(encoding="utf-8")
+                return rtext
+    def embed_captioned_extractor(response: str) -> tuple(dict, str, str):
+        try:
+            response = response.replace("\\\\/", "/").replace("\\", "")
+            embedpattern = r"\"contextJSON\":\"((?:.*?)})\""
+            matches = re.findall(embedpattern, response)
+            thejay = json.loads(matches[0])
+            media = {}
+            username = None
+            ctxmedia: dict = thejay["context"]["media"]
+            if ctxmedia.get("edge_sidecar_to_children"):
+                post = 'multiple'
+                for index, node in enumerate(ctxmedia["edge_sidecar_to_children"]["edges"]):
+                    med, pst = instadownloader.embed_captioned_extractor_worker(node['node'])
+                    if pst == 'single':
+                        media['jpg' + str(index)] = med
+                    else:
+                        media['mp4' + str(index)] = med
+                
+            else:
+                media, post = instadownloader.embed_captioned_extractor_worker(ctxmedia)
+            username = ctxmedia['owner']['username']
+            return media, username, post
+        except Exception as e:
+            return {"exception": str(e)}
+    def embed_captioned_extractor_worker(thejay: dict):
+        media = {}
+        if thejay['is_video'] == True:
+            post = 'reel'
+            media['mp4'] = thejay['video_url']
+        else:
+            post = 'single'
+            media['jpg'] = thejay['display_resources'][-1]['src']
+        return media, post
     async def apiresponse(link: str, headers: dict, cookies: dict, params: dict = None, proxy: str = None):
         async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
             async with session.get(link, headers=headers, cookies=cookies, params=params) as r:
@@ -193,7 +242,14 @@ class instadownloader:
                     media, username, post = instadownloader.public_media_extractor(publicmedia)
                     return media, username, post
                 else:
-                    return {"status": 1, "message": "couldnt fetch using graphql public api", "response": publicmedia.get("errorResponse"), "responseCode": publicmedia.get('status')}
+                    print("failed with public graphql, resorting to embed")
+                    response = await instadownloader.embed_captioned_response(link, proxy)
+                    extracted = instadownloader.embed_captioned_extractor(response)
+                    if isinstance(extracted, dict):
+                        return {"status": 1, "message": extracted.get("exception")}
+                    else:
+                        media, username, post = extracted[0], extracted[1], extracted[2]
+                    return media, username , post
             else:
 
                 try:
