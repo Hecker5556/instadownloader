@@ -193,7 +193,7 @@ class instadownloader:
                     media, username, post = instadownloader.public_media_extractor(publicmedia)
                     return media, username, post
                 else:
-                    return {"status": 1, "message": "couldnt fetch using graphql public api", "response": publicmedia.get("errorResponse"), "status": publicmedia.get('status')}
+                    return {"status": 1, "message": "couldnt fetch using graphql public api", "response": publicmedia.get("errorResponse"), "responseCode": publicmedia.get('status')}
             else:
 
                 try:
