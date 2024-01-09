@@ -97,7 +97,7 @@ class instadownloader:
             async with session.get(f'https://www.instagram.com/p/{shortcode}/embed/captioned/', headers=headers) as r:
                 rtext = await r.text(encoding="utf-8")
                 return rtext
-    def embed_captioned_extractor(response: str) -> tuple(dict, str, str):
+    def embed_captioned_extractor(response: str) -> (tuple[dict, str, str]):
         try:
             response = response.replace("\\\\/", "/").replace("\\", "")
             embedpattern = r"\"contextJSON\":\"((?:.*?)})\""
