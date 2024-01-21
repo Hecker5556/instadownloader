@@ -156,9 +156,12 @@ class instadownloader:
     async def extract(link: str, sessionid: str  = None, csrftoken: str = None, public_only: bool = False, proxy: str = None):
         """
         link (str) - link to post/story/reel
+
         sessionid (str, optional) - what sessionid to use (if needed)
+
         csrftoken (str, optional) - what csrftoken to use (if needed)
-        public_only (bool, False) - whether to only use the public graphql api (no music to single image posts and no private posts)
+
+        public_only (bool, False) - whether to only use the public graphql api or embed site if graghql doesnt work (no music to single image posts and no private posts)
         
         ## Which post type requires credentials?
 
@@ -242,13 +245,15 @@ class instadownloader:
                     media, username, post = instadownloader.public_media_extractor(publicmedia)
                     return media, username, post
                 else:
-                    print("failed with public graphql, resorting to embed")
+                    print(f"failed with public graphql, resorting to embed\nError: {publicmedia}")
                     response = await instadownloader.embed_captioned_response(link, proxy)
                     extracted = instadownloader.embed_captioned_extractor(response)
                     if isinstance(extracted, dict):
                         return {"status": 1, "message": extracted.get("exception")}
-                    else:
+                    elif isinstance(extracted, tuple):
                         media, username, post = extracted[0], extracted[1], extracted[2]
+                    else:
+                        return {"status": 1, "message": f"failed for some reason: \nresponse: {response}\nextracted: {extracted}"}
                     return media, username , post
             else:
 
