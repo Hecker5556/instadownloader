@@ -102,33 +102,53 @@ class instadownloader:
             response = response.replace("\\\\/", "/").replace("\\", "")
             embedpattern = r"\"contextJSON\":\"((?:.*?)})\""
             matches = re.findall(embedpattern, response)
-            thejay = json.loads(matches[0])
             media = {}
-            username = None
-            ctxmedia: dict = thejay["context"]["media"]
-            if ctxmedia.get("edge_sidecar_to_children"):
-                post = 'multiple'
-                for index, node in enumerate(ctxmedia["edge_sidecar_to_children"]["edges"]):
-                    med, pst = instadownloader.embed_captioned_extractor_worker(node['node'])
-                    if pst == 'single':
-                        media['jpg' + str(index)] = med
-                    else:
-                        media['mp4' + str(index)] = med
-                
+            if not matches:
+                imagepattern = r"<img class=\"EmbeddedMediaImage\" alt=\"(?:.*?)\" src=\"(.*?)\""
+                image = re.findall(imagepattern, response)
+                if not image:
+                    return {"status": 1, "message": "couldnt find anything"}
+                media['jpg'] = image[0].replace("amp;", "")
+                post = 'single'
+                username = re.findall(r"<span class=\"UsernameText\">(.*?)<", response)[0]
             else:
-                media, post = instadownloader.embed_captioned_extractor_worker(ctxmedia)
-            username = ctxmedia['owner']['username']
+                incasepattern = r"caption_title_linkified\":\"(.*?)\","
+                matches = [re.sub(incasepattern, 'caption_title_linkified": "nuh uh",', matches[0])]
+
+                thejay = json.loads(matches[0])
+                username = None
+                ctxmedia: dict = thejay["context"]["media"]
+                if ctxmedia.get("edge_sidecar_to_children"):
+                    post = 'multiple'
+                    for index, node in enumerate(ctxmedia["edge_sidecar_to_children"]["edges"]):
+                        med, pst = instadownloader.embed_captioned_extractor_worker(node['node'])
+                        if pst == 'single':
+                            media['jpg' + str(index)] = med.replace("u0025", "%")
+                        else:
+                            media['mp4' + str(index)] = med.replace("u0025", "%")
+                    
+                else:
+                    media, post = instadownloader.embed_captioned_extractor_worker(ctxmedia)
+                username = ctxmedia['owner']['username']
             return media, username, post
         except Exception as e:
-            return {"exception": str(e)}
+            with open("error_response.txt", "w", encoding="utf-8") as f1:
+                f1.write(response)
+            charpattern = r"\(char (.*?)\)"
+            whichchar = re.findall(charpattern, str(e))
+            if whichchar:
+                print(matches[0][int(whichchar[0])-50:int(whichchar[0])+50])
+                with open("errormatches.txt", "w", encoding="utf-8") as f1:
+                    f1.write(matches[0])
+            return {"exception": traceback.format_exc(), "file": "error_response.txt"}
     def embed_captioned_extractor_worker(thejay: dict):
         media = {}
         if thejay['is_video'] == True:
             post = 'reel'
-            media['mp4'] = thejay['video_url']
+            media['mp4'] = thejay['video_url'].replace("u0025", "%")
         else:
             post = 'single'
-            media['jpg'] = thejay['display_resources'][-1]['src']
+            media['jpg'] = thejay['display_resources'][-1]['src'].replace("u0025", "%")
         return media, post
     async def apiresponse(link: str, headers: dict, cookies: dict, params: dict = None, proxy: str = None):
         async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
@@ -519,7 +539,11 @@ class instadownloader:
                 if post == 'image':
                     files2["image"] = filename
                 filesizes = {}
-                await instadownloader.downloadworker(link = value, filename=filename)
+                if isinstance(value, str):
+                    url = value
+                elif isinstance(value, dict):
+                    url = value.values()[0]
+                await instadownloader.downloadworker(link = url, filename=filename)
             else:
                  if not value:
                      continue
