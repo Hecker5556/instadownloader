@@ -123,9 +123,9 @@ class instadownloader:
                     for index, node in enumerate(ctxmedia["edge_sidecar_to_children"]["edges"]):
                         med, pst = instadownloader.embed_captioned_extractor_worker(node['node'])
                         if pst == 'single':
-                            media['jpg' + str(index)] = med.replace("u0025", "%")
+                            media['jpg' + str(index)] = med['jpg']
                         else:
-                            media['mp4' + str(index)] = med.replace("u0025", "%")
+                            media['mp4' + str(index)] = med['mp4']
                     
                 else:
                     media, post = instadownloader.embed_captioned_extractor_worker(ctxmedia)
