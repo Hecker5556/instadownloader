@@ -18,6 +18,9 @@ class instadownloader:
     class badsessionid(Exception):
         def __init__(self, *args: object) -> None:
             super().__init__(*args)
+    class no_media(Exception):
+        def __init__(self, *args: object) -> None:
+            super().__init__(*args)
     def giveconnector(proxy):
         connector = aiohttp.TCPConnector()
         if proxy:
@@ -118,6 +121,8 @@ class instadownloader:
                 thejay = json.loads(matches[0])
                 username = None
                 ctxmedia: dict = thejay["context"]["media"]
+                if not ctxmedia:
+                    raise instadownloader.no_media(f"No media found! Perhaps age restricted?")
                 if ctxmedia.get("edge_sidecar_to_children"):
                     post = 'multiple'
                     for index, node in enumerate(ctxmedia["edge_sidecar_to_children"]["edges"]):
@@ -259,13 +264,13 @@ class instadownloader:
 
         if 'stories' not in link:
             if public_only:
-                
-                publicmedia = await instadownloader.public_media(link, csrftoken2, proxy)
-                if not publicmedia.get("errorResponse"):
-                    media, username, post = instadownloader.public_media_extractor(publicmedia)
-                    return media, username, post
-                else:
-                    print(f"failed with public graphql, resorting to embed\nError: {publicmedia}")
+                try:
+                    publicmedia = await instadownloader.public_media(link, csrftoken2, proxy)
+                    if not publicmedia.get("errorResponse"):
+                        media, username, post = instadownloader.public_media_extractor(publicmedia)
+                        return media, username, post
+                except:
+                    print(f"failed with public graphql, resorting to embed\nError: {traceback.format_exc()}")
                     response = await instadownloader.embed_captioned_response(link, proxy)
                     extracted = instadownloader.embed_captioned_extractor(response)
                     if isinstance(extracted, dict):
@@ -426,8 +431,6 @@ class instadownloader:
                     newheaders['x-csrftoken'] = csrftoken
                     newheaders['x-ig-app-id'] = appid
                     apiresp = await instadownloader.api_media(headers=newheaders, cookies=cookies, mediaid = mediaid[0], proxy=proxy)
-                    # with open('response.json', 'w') as f1:
-                    #     json.dump(apiresp, f1, indent=4)
                     print('actually single image')
                     post = 'image'
                     match = find_key(apiresp, 'image_versions2')
@@ -464,6 +467,8 @@ class instadownloader:
             post = 'reel'
             pattern = r'\"video_versions\":(.*?\])'
             matches = re.findall(pattern, rtext, re.MULTILINE)
+            if not matches:
+                raise instadownloader.no_media(f"No media! Perhaps check if age restricted or private?")
             thejson = json.loads(matches[0])
             media: dict = {}
             for i in thejson:
