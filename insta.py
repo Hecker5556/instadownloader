@@ -21,13 +21,14 @@ class instadownloader:
     class no_media(Exception):
         def __init__(self, *args: object) -> None:
             super().__init__(*args)
+    class get_info_fail(Exception):
+        def __init__(self, *args: object) -> None:
+            super().__init__(*args)
     def giveconnector(proxy):
         connector = aiohttp.TCPConnector()
         if proxy:
             if "socks" in proxy:
                 connector = ProxyConnector.from_url(proxy)
-            else:
-                connector = aiohttp.TCPConnector(proxy=proxy)
         return connector
     async def public_media(link: str, csrftoken: str, proxy : str = None) -> dict:
         patternshortcode = r"https://(?:www)?\.instagram\.com/(?:reels||p||stories||reel||story)/(.*?)/?$"
@@ -51,7 +52,7 @@ class instadownloader:
         async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
             data = {'variables': '{"shortcode":"%s"}' % shortcode,
                     'doc_id': '10015901848480474'}
-            async with session.post("https://www.instagram.com/api/graphql", data=data, headers=headers, cookies=cookies) as r:
+            async with session.post("https://www.instagram.com/api/graphql", data=data, headers=headers, cookies=cookies, proxy=proxy if proxy and proxy.startswith("https") else None) as r:
                 rtext = await r.text(encoding="utf-8")
                 try:
                     return json.loads(rtext)
@@ -97,7 +98,7 @@ class instadownloader:
                 'sec-fetch-mode': 'navigate',
                 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             }
-            async with session.get(f'https://www.instagram.com/p/{shortcode}/embed/captioned/', headers=headers) as r:
+            async with session.get(f'https://www.instagram.com/p/{shortcode}/embed/captioned/', headers=headers, proxy=proxy if proxy and proxy.startswith("https") else None) as r:
                 rtext = await r.text(encoding="utf-8")
                 return rtext
     def embed_captioned_extractor(response: str) -> (tuple[dict, str, str]):
@@ -157,12 +158,12 @@ class instadownloader:
         return media, post
     async def apiresponse(link: str, headers: dict, cookies: dict, params: dict = None, proxy: str = None):
         async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
-            async with session.get(link, headers=headers, cookies=cookies, params=params) as r:
+            async with session.get(link, headers=headers, cookies=cookies, params=params, proxy=proxy if proxy and proxy.startswith("https") else None) as r:
                 response = await r.text(encoding="utf-8")
                 return json.loads(response)
     async def api_media(headers: dict, cookies: dict, mediaid: int, proxy: str = None):
         async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
-            async with session.get(f"https://www.instagram.com/api/v1/media/{mediaid}/info", headers = headers, cookies=cookies) as r:
+            async with session.get(f"https://www.instagram.com/api/v1/media/{mediaid}/info", headers = headers, cookies=cookies, proxy=proxy if proxy and proxy.startswith("https") else None) as r:
                 r = await r.text(encoding="utf-8")
                 return json.loads(r)
     async def api_stories(headers: dict, cookies: dict, reel_ids: int, mediaid: int, proxy: str = None):
@@ -171,7 +172,7 @@ class instadownloader:
                 'media_id': mediaid,
                 'reel_ids': reel_ids,
             }
-            async with session.get('https://www.instagram.com/api/v1/feed/reels_media/', cookies=cookies, params=params, headers=headers) as r:
+            async with session.get('https://www.instagram.com/api/v1/feed/reels_media/', cookies=cookies, params=params, headers=headers, proxy=proxy if proxy and proxy.startswith("https") else None) as r:
                 r = await r.text(encoding="utf-8")
                 return json.loads(r)
     def app_and_user_id(text: str, appidpattern, useridpattern):
@@ -210,16 +211,19 @@ class instadownloader:
         
         So for any public downloader youre doing, use public_only
         """
-        if not sessionid:
+        if not sessionid and not public_only:
             sessionid = env.sessionid
-        if not csrftoken:
+        if not csrftoken and not public_only:
             csrftoken = env.csrftoken
         print(link)
         allmedia = r'(\{\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":\{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisPostRootQueryRelayPreloader(?:.*?))</script>'
-        cookies = {
+        if not public_only:
+            cookies = {
             'sessionid': sessionid,
             'csrftoken': csrftoken
-        }
+            }
+        else:
+            cookies = None
 
         headers = {
             'authority': 'www.instagram.com',
@@ -234,7 +238,7 @@ class instadownloader:
         patterncsrf = r"{\"csrf_token\":\"(.*?)\"}"
         if not os.path.exists("tempcsrf.json"):
             async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
-                async with session.get(link, headers=headers, cookies=None) as r:
+                async with session.get(link, headers=headers, cookies=None, proxy=proxy if proxy and proxy.startswith("https") else None)) as r:
                     rtext = ""
                     while True:
                         chunk = await r.content.read(1024)
@@ -249,7 +253,7 @@ class instadownloader:
                 the = json.loads(await f1.read())
                 if datetime.now() > datetime.fromisoformat(the["expire"]):
                     async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
-                        async with session.get(link, headers=headers, cookies=None) as r:
+                        async with session.get(link, headers=headers, cookies=None, proxy=proxy if proxy and proxy.startswith("https") else None)) as r:
                             rtext = ""
                             while True:
                                 chunk = await r.content.read(1024)
@@ -286,7 +290,7 @@ class instadownloader:
                     
                     patternmediaid = r"content=\"instagram://media\?id=(.*?)\""
                     async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
-                                    async with session.get(link, headers=headers, cookies=None) as r:
+                                    async with session.get(link, headers=headers, cookies=None, proxy=proxy if proxy and proxy.startswith("https") else None)) as r:
                                         rtext = ""
                                         while True:
                                             chunk = await r.content.read(1024)
@@ -298,7 +302,7 @@ class instadownloader:
                         print("private post, have to scrape")
                         async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
                             try:
-                                async with session.get(link, headers=headers, cookies=cookies) as r:
+                                async with session.get(link, headers=headers, cookies=cookies, proxy=proxy if proxy and proxy.startswith("https") else None)) as r:
                                     rtext = ""
                                     while True:
                                         chunk = await r.content.read(1024)
@@ -360,7 +364,7 @@ class instadownloader:
             if public_only:
                 return {"status": 1, "message": "cant use public API with stories"}
             patternusername = r"https://(?:www\.)?instagram\.com/stories/(.*?)/(?:.*?)/?$"
-            patternuserid = r"\"props\":{\"id\":\"(.*?)\""
+            patternuserid = r"\"id\":\"(.*?)\""
             patternmediaid = r"https://(?:www\.)?instagram\.com/stories/(?:.*?)/(.*?)/?$"
             userid = None
             username = re.findall(patternusername, link)[0]
@@ -368,9 +372,15 @@ class instadownloader:
             headers2 = headers.copy()
             headers2["cookie"] = f'csrftoken={csrftoken2[0]}'
             async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
-                async with session.get(f"https://www.instagram.com/{username}/", headers=headers2) as r:
+                async with session.get(f"https://www.instagram.com/{username}/", headers=headers2, proxy=proxy if proxy and proxy.startswith("https") else None)) as r:
                     respo = await r.text("utf-8")
                     userid = re.findall(patternuserid, respo)
+                if not userid:
+                    async with session.get(link, headers=headers2) as r:
+                        respo = await r.text("utf-8")
+                        userid = re.findall(patternuserid, respo)
+                if not userid:
+                    raise instadownloader.get_info_fail(f"couldnt get user id :(")
             newheaders = headers.copy()
             newheaders['x-csrftoken'] = csrftoken
             newheaders['x-ig-app-id'] = "936619743392459"
@@ -390,7 +400,7 @@ class instadownloader:
 
         async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
             try:
-                async with session.get(link, headers=headers, cookies=cookies) as r:
+                async with session.get(link, headers=headers, cookies=cookies, proxy=proxy if proxy and proxy.startswith("https") else None) as r:
                     rtext = ""
                     while True:
                         chunk = await r.content.read(1024)
@@ -509,7 +519,7 @@ class instadownloader:
     async def downloadworker(link: str, filename: str, proxy: str = None):
         async with aiofiles.open(filename, 'wb') as f1:
             async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
-                async with session.get(URL(link, encoded=True)) as response:
+                async with session.get(URL(link, encoded=True), proxy=proxy if proxy and proxy.startswith("https") else None) as response:
                     totalsize = int(response.headers.get('content-length'))
                     progress = tqdm(total=totalsize, unit='iB', unit_scale=True)
                     while True:
