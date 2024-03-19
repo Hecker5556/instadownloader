@@ -372,11 +372,11 @@ class instadownloader:
             headers2 = headers.copy()
             headers2["cookie"] = f'csrftoken={csrftoken2[0]}'
             async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
-                async with session.get(f"https://www.instagram.com/{username}/", headers=headers2, proxy=proxy if proxy and proxy.startswith("https") else None) as r:
+                async with session.get(f"https://www.instagram.com/{username}/", headers=headers2, proxy=proxy if proxy and proxy.startswith("https") else None, cookies=cookies) as r:
                     respo = await r.text("utf-8")
                     userid = re.findall(patternuserid, respo)
                 if not userid:
-                    async with session.get(link, headers=headers2) as r:
+                    async with session.get(link, headers=headers2, proxy=proxy if proxy and proxy.startswith("https") else None, cookies=cookies) as r:
                         respo = await r.text("utf-8")
                         userid = re.findall(patternuserid, respo)
                 if not userid:
