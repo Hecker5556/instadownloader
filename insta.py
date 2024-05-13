@@ -179,6 +179,61 @@ class instadownloader:
         appid = re.findall(appidpattern, text)
         useridpattern = re.findall(useridpattern, text)
         return appid[0], useridpattern[0]
+    def _find_key(obj, searching_for: str):
+        path = []
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if key == searching_for:
+                    path.append(key)
+                    return path
+
+                result = instadownloader._find_key(value, searching_for)
+                if result:
+                    path.append(key)
+                    path += result
+                    return path
+        elif isinstance(obj, list):
+            for index, i in enumerate(obj):
+                result = instadownloader._find_key(i, searching_for)
+                if result:
+                    path.append(index)
+                    path += result
+                    return path
+
+        return path
+    async def get_hightlights(link: str, headers: dict, cookies: dict, proxy: str = None):
+        async with aiohttp.ClientSession(connector=instadownloader.giveconnector(proxy)) as session:
+            async with session.get(link, headers=headers, cookies=cookies, proxy=proxy if proxy and proxy.startswith("https") else None) as r:
+                r = await r.text(encoding="utf-8")
+                pattern = r"({\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisStoriesV\dHighlightsPageQueryRelayPreloader_(?:.*?)\",{\"__bbox\"(?:.*?),{\"__bbox\":null}]]]})</script>"
+                matches = re.findall(pattern, r)
+                if not matches:
+                    raise instadownloader.no_media(f"couldnt grab highlights")
+                thejson = json.loads(matches[0])
+                with open("response.json", "w") as f1:
+                    json.dump(thejson, f1, indent=4)
+                path = instadownloader._find_key(thejson, "items")
+                if not path:
+                    raise instadownloader.no_media(f"couldnt find items")
+                templist = []
+                for i in path:
+                    if isinstance(i, str):
+                        templist.append(f"['{i}']")
+                    elif isinstance(i, int):
+                        templist.append(f"[{i}]")
+                items = eval(f"thejson{''.join(templist)}")
+                user_path = instadownloader._find_key(thejson, "username")
+                if not user_path:
+                    username = "username"
+                else:
+                    templist = []
+                    for i in user_path:
+                        if isinstance(i, str):
+                            templist.append(f"['{i}']")
+                        elif isinstance(i, int):
+                            templist.append(f"[{i}]")
+                    username = eval(f"thejson{''.join(templist)}")
+                return items, username
     async def extract(link: str, sessionid: str  = None, csrftoken: str = None, public_only: bool = False, proxy: str = None):
         """
         link (str) - link to post/story/reel
@@ -266,8 +321,8 @@ class instadownloader:
                 else:
                     csrftoken2 = the.get('csrf')
 
-        if 'stories' not in link:
-            if public_only:
+        if 'stories' not in link or 'highlights' in link:
+            if public_only and 'highlights' not in link:
                 try:
                     publicmedia = await instadownloader.public_media(link, csrftoken2, proxy)
                     if not publicmedia.get("errorResponse"):
@@ -284,6 +339,19 @@ class instadownloader:
                     else:
                         return {"status": 1, "message": f"failed for some reason: \nresponse: {response}\nextracted: {extracted}"}
                     return media, username , post
+            elif "highlights" in link:
+                items, username = await instadownloader.get_hightlights(link, headers, cookies, proxy)
+                media = {}
+                post = "highlights"
+                for idx, item in enumerate(items):
+                    if item.get("video_versions"):
+                        for video in item.get("video_versions"):
+                            media[f'mp4{idx}'] = video.get('url')
+                            break
+                    elif item.get("image_versions2"):
+                        media[f"jpg{idx}"] = item.get("image_versions2").get("candidates")[0].get('url')
+                return media, username, post
+                
             else:
 
                 try:
