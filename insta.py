@@ -128,7 +128,7 @@ class instadownloader:
             post = "reel"
             self.media["mp4"] = eval(f'publicmedia{self._path_parser(video)}')
         else:
-            post = "single"
+            post = "image"
             self.media["jpg"] = eval(f"publicmedia{self._path_parser(self._find_key(publicmedia, 'display_resources'))}")[-1]['src']
         username = eval(f"publicmedia{self._path_parser(self._find_key(publicmedia, 'username'))}")
         caption_attempt = self._find_key(publicmedia, "text")
@@ -238,7 +238,7 @@ class instadownloader:
             if not image:
                 return None
             self.media['jpg'] = image[0].replace("amp;", "")
-            post = 'single'
+            post = 'image'
             username = re.findall(r"<span class=\"UsernameText\">(.*?)<", response)[0]
             caption_pattern = r"<br />(.*?)<div class=\"CaptionComments\">"
             caption = re.findall(caption_pattern, response)[0]
