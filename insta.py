@@ -429,8 +429,8 @@ class instadownloader:
                 image = cv2.resize(image, (width, height))
                 cv2.imwrite(filenames[0], image)
                 process = await asyncio.create_subprocess_exec("ffmpeg", *["-loop", "1", "-r", "2", "-i", filenames[0], "-i", filename, "-ss", self.result['music'].get('start_time'), "-t",str(self.result['music']['duration']),"-c:a", "copy", filenames[0].replace('jpg', 'mp4'), '-v', 'error'])
-                result = await process.wait()
-                if process == 0:
+                await process.wait()
+                if os.path.exists(filenames[0].replace('jpg', 'mp4')):
                     filenames.append(filenames[0].replace('jpg', 'mp4'))
                 os.remove(filename)
             self.result['filenames'] = filenames
@@ -475,4 +475,4 @@ if __name__ == "__main__":
         print('error occured')
     else:
         print('\n')
-        print(insta.result)
+        print(json.dumps(insta.result, indent=4))
