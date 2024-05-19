@@ -2,19 +2,7 @@ import subprocess, sys, os
 def main():
     subprocess.run(f'pip install -r {os.path.join(os.path.dirname(os.path.dirname(__file__)), "instadownloader/requirements.txt")}'.split())
     if not os.path.exists('env.py'):
-        try:
-            import pygame
-
-            pygame.mixer.init()
-
-            sound_file = "the.wav"
-            sound = pygame.mixer.Sound(sound_file)
-
-            sound.play()
-            subprocess.run('python writeid.py'.split())
-        except Exception as e:
-            print(e)
-            input()
+        subprocess.run('python writeid.py'.split())
     if sys.platform.startswith('win'):
         subprocess.run('pip install cx_Freeze'.split())
 

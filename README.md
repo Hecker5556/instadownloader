@@ -37,11 +37,11 @@ import sys, asyncio
 if 'instadownloader' not in sys.path:
     sys.path.append('instadownloader')
 from instadownloader.insta import instadownloader
-filenames, fileinfo = asyncio.run(instadownloader.download(link))
+info = asyncio.run(instadownloader().download(link))
 
 #in async function
 async def main():
-    filenames, fileinfo = await instadownloader.download(link)
+    info = await instadownloader().download(link)
 ```
 
 

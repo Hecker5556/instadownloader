@@ -1,5 +1,6 @@
 aiohttp
 aiofiles
-pygame
 tqdm
 aiohttp_socks
+colorama
+opencv-python
