@@ -180,6 +180,8 @@ class instadownloader:
         async with self.session.get(f'https://www.instagram.com/p/{shortcode}/embed/captioned/', headers=headers, proxy=self.proxy) as r:
             self.logger.debug(self._format_request_info(r.request_info))
             rtext = await r.text(encoding="utf-8")
+            with open("embed_captioned.txt","w") as f1:
+                f1.write(rtext)
             return rtext
     def embed_captioned_extractor(self, response: str):
  
@@ -242,8 +244,8 @@ class instadownloader:
             post = 'image'
             username = re.findall(r"<span class=\"UsernameText\">(.*?)<", response)[0]
             caption_pattern = r"<br />(.*?)<div class=\"CaptionComments\">"
-            caption = re.findall(caption_pattern, response)[0]
-            self.result = {"media": self.media, "username": username, "post": post, "caption": caption, 
+            caption = re.findall(caption_pattern, response)
+            self.result = {"media": self.media, "username": username, "post": post, "caption": caption[0] if caption else None, 
                         "posted": date_posted, "profile_pic": profile_pic, "likes": likes, "comments": comments}
     async def _downloader(self, filename, url):
         async with aiofiles.open(filename, 'wb') as f1:
