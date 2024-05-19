@@ -297,7 +297,7 @@ class instadownloader:
             self.result = {"media": self.media, "username": username, "post": "highlights", "caption": None, 
                         "posted": date_posted, "profile_pic": profile_pic, "likes": None, "comments": None, "thumbnail": thumbnail}
     async def _get_story(self, link: str):
-        story_pattern = r"({\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisStoriesV3ReelPageStandaloneDirectQueryRelayPreloader_(?:.*?)\",{\"__bbox\":{\"complete\":true,\"result\":{\"data\":{\"xdt_api__v1__feed__reels_media\":{\"reels_media\":(?:.*?))</script>"
+        story_pattern = r"({\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisStoriesV3ReelPageStandalone(?:.*?))</script>"
         async with self.session.get(link, headers=self.headers, cookies=self.cookies, proxy=self.proxy) as r:
             self.logger.debug(self._format_request_info(r.request_info))
             response = await r.text("utf-8")
