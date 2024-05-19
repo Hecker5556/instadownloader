@@ -336,15 +336,13 @@ class instadownloader:
                         self.cookies['csrftoken'] = self.csrf
     async def _get_post(self, link: str):
         allmedia =r'(\{\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":\{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisPostRoot(?:.*?))</script>'
-        try:
-            async with self.session.get(link, headers=self.headers, cookies=self.cookies, proxy=self.proxy) as r:
-                self.logger.debug(self._format_request_info(r.request_info))
-                response = await r.text("utf-8")
-                with open("response.txt", "w") as f1:
-                    f1.write(response)
-        except aiohttp.TooManyRedirects:
-            self.logger.info(f"{Fore.RED}Too many redirects! get a new sessionid{Fore.RESET}")
-            raise self.badsessionid(f"get a new sessionid!")
+
+        async with self.session.get(link, headers=self.headers, proxy=self.proxy) as r:
+            self.logger.debug(self._format_request_info(r.request_info))
+            response = await r.text("utf-8")
+            with open("response.txt", "w", encoding="utf-8") as f1:
+                f1.write(response)
+
         patternmediaid = r"content=\"instagram://media\?id=(.*?)\""
         mediaid = re.findall(patternmediaid, response)
         if mediaid:
@@ -358,6 +356,17 @@ class instadownloader:
                 response = await r.text(encoding="utf-8")
                 post = json.loads(response)
         else:
+            try:
+                async with self.session.get(link, headers=self.headers, cookies=self.cookies, proxy=self.proxy) as r:
+                    self.logger.debug(self._format_request_info(r.request_info))
+                    response = await r.text("utf-8")
+                    with open("response.txt", "w", encoding="utf-8") as f1:
+                        f1.write(response)
+            except aiohttp.TooManyRedirects:
+                self.logger.info(f"{Fore.RED}Too many redirects! get a new sessionid{Fore.RESET}")
+                raise self.badsessionid(f"get a new sessionid!")
+            if not (mediaid := re.findall(patternmediaid, response)):
+                post = json.loads(matches[0])
             if not (matches := re.findall(allmedia, response)):
                 raise self.get_info_fail(f"couldnt grab info from post")
             post = json.loads(matches[0])
@@ -380,11 +389,12 @@ class instadownloader:
         date_posted = eval(f"post{self._path_parser(self._find_key(post, 'taken_at'))}")
         music = {}
         if (music_attempt := self._find_key(post, "music_metadata")) and (music_data := eval(f"post{self._path_parser(music_attempt)}")):
-            music['url'] = music_data['music_info']['music_asset_info']['progressive_download_url']
-            music['title'] = music_data['music_info']['music_asset_info']['title']
-            music['artist'] = music_data['music_info']['music_asset_info']['display_artist']
-            music['start_time'] = f"{int((music_data['music_info']['music_consumption_info']['audio_asset_start_time_in_ms']/1000)//60):02}:{int((music_data['music_info']['music_consumption_info']['audio_asset_start_time_in_ms']/1000)%60):02}"
-            music['duration'] = music_data['music_info']['music_consumption_info']['overlap_duration_in_ms']/1000
+            if music_data.get('music_info'):
+                music['url'] = music_data['music_info']['music_asset_info']['progressive_download_url']
+                music['title'] = music_data['music_info']['music_asset_info']['title']
+                music['artist'] = music_data['music_info']['music_asset_info']['display_artist']
+                music['start_time'] = f"{int((music_data['music_info']['music_consumption_info']['audio_asset_start_time_in_ms']/1000)//60):02}:{int((music_data['music_info']['music_consumption_info']['audio_asset_start_time_in_ms']/1000)%60):02}"
+                music['duration'] = music_data['music_info']['music_consumption_info']['overlap_duration_in_ms']/1000
         self.result = {"media": self.media, "username": username, "post": post_type, "caption": caption, 
                         "posted": date_posted, "profile_pic": profile_pic, "likes": likes, "comments": comments, 'music': music}
     async def _download(self, link: str, handle_merge: bool = True, public_only: bool = True, proxy: str = None, dont_download: bool = False):
@@ -478,4 +488,4 @@ if __name__ == "__main__":
         print('error occured')
     else:
         print('\n')
-        print(json.dumps(insta.result, indent=4))
+        print(json.dumps(insta.result, indent=4, ensure_ascii = False))
