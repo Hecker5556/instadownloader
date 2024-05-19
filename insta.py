@@ -29,7 +29,8 @@ class instadownloader:
         try:
             import env
             self.sessionid = env.sessionid
-            self.cookies = {"sessionid": self.sessionid}
+            self.csrf = env.csrftoken
+            self.cookies = {"sessionid": self.sessionid, "csrftoken": self.csrf}
             self.logger.debug(f"{Fore.GREEN}found credentials in env.py{Fore.RESET}")
         except ModuleNotFoundError:
             if not hasattr(self, "sessionid"):
