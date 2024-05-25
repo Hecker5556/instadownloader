@@ -459,7 +459,7 @@ class instadownloader:
             if not self.sessionid:
                 self.get_credentials()
             else:
-                self.cookies['sessionid'] = self.sessionid
+                self.cookies = {"sessionid": self.sessionid}
         else:
             self.cookies = {}
         self.headers = {
