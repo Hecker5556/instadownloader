@@ -293,7 +293,8 @@ class instadownloader:
                     self.media[f"jpg{index}"] = item['image_versions2']['candidates'][0].get('url')
             username = eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'username'))}")
             profile_pic = eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'profile_pic_url'))}")
-            thumbnail = eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'full_image_version'))}").get('url')
+            if not (thumbnail := eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'full_image_version'))}")):
+                thumnail = eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'cropped_image_version'))}").get('url')
             date_posted = eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'latest_reel_media'))}")
             self.result = {"media": self.media, "username": username, "post": "highlights", "caption": None, 
                         "posted": date_posted, "profile_pic": profile_pic, "likes": None, "comments": None, "thumbnail": thumbnail}
