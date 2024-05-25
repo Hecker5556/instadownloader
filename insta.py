@@ -22,6 +22,8 @@ class instadownloader:
     class no_credentials(Exception):
         def __init__(self, *args: object) -> None:
             super().__init__(*args)
+    def __init__(self):
+        self.sessionid = None
     def giveconnector(self, proxy):
         self.proxy = proxy if proxy and proxy.startswith("https") else None
         return ProxyConnector.from_url(proxy) if proxy and proxy.startswith("socks") else aiohttp.TCPConnector()
@@ -29,8 +31,7 @@ class instadownloader:
         try:
             import env
             self.sessionid = env.sessionid
-            self.csrf = env.csrftoken
-            self.cookies = {"sessionid": self.sessionid, "csrftoken": self.csrf}
+            self.cookies = {"sessionid": self.sessionid}
             self.logger.debug(f"{Fore.GREEN}found credentials in env.py{Fore.RESET}")
         except ModuleNotFoundError:
             if not hasattr(self, "sessionid"):
@@ -346,9 +347,10 @@ class instadownloader:
         patternmediaid = r"content=\"instagram://media\?id=(.*?)\""
         mediaid = re.findall(patternmediaid, response)
         if mediaid:
-            patterncsrf = re.compile(r"{\"csrf_token\":\"(.*?)\"}")
-            csrf = re.findall(patterncsrf, response)
-            self.csrf = csrf[0]
+            if not hasattr(self, "csrf"):
+                patterncsrf = re.compile(r"{\"csrf_token\":\"(.*?)\"}")
+                csrf = re.findall(patterncsrf, response)
+                self.csrf = csrf[0]
             self.headers['x-csrftoken'] = self.csrf
             self.headers['x-ig-app-id'] = "936619743392459"
             async with self.session.get(f"https://www.instagram.com/api/v1/media/{mediaid[0]}/info", headers = self.headers, cookies=self.cookies, proxy=self.proxy) as r:
@@ -454,7 +456,8 @@ class instadownloader:
             logging.basicConfig(level=logging.INFO, format="%(message)s")
         self.logger = logging.getLogger(__name__)
         if not public_only:
-            self.get_credentials()
+            if not self.sessionid:
+                self.get_credentials()
         else:
             self.cookies = {}
         self.headers = {
