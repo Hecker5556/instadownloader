@@ -5,6 +5,7 @@ import argparse
 import asyncio, aiohttp, aiofiles, traceback
 from aiohttp_socks import ProxyConnector
 from colorama import Fore
+from yarl import URL
 
 class instadownloader:
     class no_media_id(Exception):
@@ -250,7 +251,7 @@ class instadownloader:
                         "posted": date_posted, "profile_pic": profile_pic, "likes": likes, "comments": comments}
     async def _downloader(self, filename, url):
         async with aiofiles.open(filename, 'wb') as f1:
-            async with self.session.get(url) as r:
+            async with self.session.get(URL(url, encoded=True)) as r:
                 self.logger.debug(self._format_request_info(r.request_info))
                 progress = tqdm(total=int(r.headers.get('content-length')), unit='iB', unit_scale=True, colour="green")
                 while True:
@@ -294,7 +295,7 @@ class instadownloader:
             username = eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'username'))}")
             profile_pic = eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'profile_pic_url'))}")
             if not (thumbnail := eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'full_image_version'))}")):
-                thumnail = eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'cropped_image_version'))}").get('url')
+                thumbnail = eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'cropped_image_version'))}").get('url')
             date_posted = eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'latest_reel_media'))}")
             self.result = {"media": self.media, "username": username, "post": "highlights", "caption": None, 
                         "posted": date_posted, "profile_pic": profile_pic, "likes": None, "comments": None, "thumbnail": thumbnail}
