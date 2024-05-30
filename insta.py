@@ -190,6 +190,13 @@ class instadownloader:
         response = response.replace("\\\\/", "/").replace("\\", "")
         embedpattern = r"\"contextJSON\":\"((?:.*?)})\""
         self.media = {}
+        date_posted = None
+        username = None
+        caption = None
+        date_posted = None
+        profile_pic = None
+        likes = None
+        comments = None
         if matches := re.findall(embedpattern, response):
             incasepattern = r"caption_title_linkified\":\"(.*?)\","
             matches = [re.sub(incasepattern, 'caption_title_linkified": "nuh uh",', matches[0])]
@@ -200,12 +207,6 @@ class instadownloader:
             if thejay.get("gql_data"):
                 self.public_media_extractor(thejay.get("gql_data"))
                 return
-            username = None
-            caption = None
-            date_posted = None
-            profile_pic = None
-            likes = None
-            comments = None
             ctxmedia: dict = thejay["context"]["media"]
             if not ctxmedia:
                 raise self.no_media(f"No media found! Perhaps age restricted?")
@@ -389,7 +390,9 @@ class instadownloader:
         profile_pic = user.get('profile_pic_url')
         likes = eval(f"post{self._path_parser(self._find_key(post, 'like_count'))}")
         comments = eval(f"post{self._path_parser(self._find_key(post, 'comment_count'))}")
-        caption = eval(f"post{self._path_parser(self._find_key(post, 'caption'))}").get('text')
+        caption = eval(f"post{self._path_parser(self._find_key(post, 'caption'))}")
+        if caption:
+            caption = caption.get("text")
         date_posted = eval(f"post{self._path_parser(self._find_key(post, 'taken_at'))}")
         music = {}
         if (music_attempt := self._find_key(post, "music_metadata")) and (music_data := eval(f"post{self._path_parser(music_attempt)}")):
