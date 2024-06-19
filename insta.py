@@ -47,7 +47,7 @@ class instadownloader:
         return f"sending {Fore.BLUE}{method}{Fore.RESET} request to {Fore.CYAN}{url}{Fore.RESET} using headers:\n{headers}\nother info:\n{other_info}"
     async def _graphql_api(self, link: str):
         patternshortcode = r"https://(?:www)?\.instagram\.com/(?:reels||p||stories||reel||story)/(.*?)/?$"
-        shortcode = re.findall(patternshortcode, link)[0]
+        shortcode = re.findall(patternshortcode, link.split("?")[0])[0]
         headers = {
             'authority': 'www.instagram.com',
             'accept': '*/*',
@@ -169,7 +169,7 @@ class instadownloader:
         self.cookies['csrftoken'] = self.csrf
     async def _embed_captioned(self, link: str):
         patternshortcode = r"https://(?:www)?\.instagram\.com/(?:reels||p||stories||reel||story)/(.*?)/?$"
-        shortcode = re.findall(patternshortcode, link)[0]
+        shortcode = re.findall(patternshortcode, link.split("?")[0])[0]
         headers = {
             'authority': 'www.instagram.com',
             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
@@ -338,8 +338,27 @@ class instadownloader:
                     else:
                         self.csrf = csrf
                         self.cookies['csrftoken'] = self.csrf
-    async def _get_post(self, link: str):
+    async def _get_info_from_source(self, link):
         allmedia =r'(\{\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":\{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisPostRoot(?:.*?))</script>'
+        patternmediaid = r"content=\"instagram://media\?id=(.*?)\""
+        try:
+            async with self.session.get(link, headers=self.headers, cookies=self.cookies, proxy=self.proxy) as r:
+                self.logger.debug(self._format_request_info(r.request_info))
+                response = await r.text("utf-8")
+                with open("response.txt", "w", encoding="utf-8") as f1:
+                    f1.write(response)
+        except aiohttp.TooManyRedirects:
+            self.logger.info(f"{Fore.RED}Too many redirects! get a new sessionid{Fore.RESET}")
+            raise self.badsessionid(f"get a new sessionid!")
+        if not (mediaid := re.findall(patternmediaid, response)):
+            post = json.loads(re.findall(allmedia, response)[0])
+        if not (matches := re.findall(allmedia, response)):
+            raise self.get_info_fail(f"couldnt grab info from post")
+        post = json.loads(matches[0])
+        with open("post.json", "w") as f1:
+            json.dump(post, f1, indent=4)
+        return post
+    async def _get_post(self, link: str):
 
         async with self.session.get(link, headers=self.headers, proxy=self.proxy) as r:
             self.logger.debug(self._format_request_info(r.request_info))
@@ -361,24 +380,17 @@ class instadownloader:
                 response = await r.text(encoding="utf-8")
                 post = json.loads(response)
         else:
-            try:
-                async with self.session.get(link, headers=self.headers, cookies=self.cookies, proxy=self.proxy) as r:
-                    self.logger.debug(self._format_request_info(r.request_info))
-                    response = await r.text("utf-8")
-                    with open("response.txt", "w", encoding="utf-8") as f1:
-                        f1.write(response)
-            except aiohttp.TooManyRedirects:
-                self.logger.info(f"{Fore.RED}Too many redirects! get a new sessionid{Fore.RESET}")
-                raise self.badsessionid(f"get a new sessionid!")
-            if not (mediaid := re.findall(patternmediaid, response)):
-                post = json.loads(matches[0])
-            if not (matches := re.findall(allmedia, response)):
-                raise self.get_info_fail(f"couldnt grab info from post")
-            post = json.loads(matches[0])
-        with open("post.json", "w") as f1:
-            json.dump(post, f1, indent=4)
+            post = await self._get_info_from_source(link)
         items = eval(f"post{self._path_parser(self._find_key(post, 'items'))}")
         self.media = {}
+        if items.get('message') and "Media not found" in items['message'] and items['status'] == 'fail':
+            post = await self._get_info_from_source(link)
+            finder = self._path_parser(self._find_key(post, 'items'))
+            if not finder:
+                raise self.no_media(f"Instagram couldn't return any media")
+            items = eval(f"post{finder}")
+            if post == items:
+                raise self.no_media(f"Instagram couldn't return any media")
         for index, item in enumerate(items):
             if item.get('video_versions'):
                 self.media[f'mp4{index}'] = item['video_versions'][0]['url']
@@ -477,9 +489,9 @@ class instadownloader:
         if not hasattr(self, "session"):
             async with aiohttp.ClientSession(connector=self.giveconnector(proxy)) as session:
                 self.session = session
-                await self._download(link.split("?")[0], handle_merge, public_only, proxy, dont_download)
+                await self._download(link, handle_merge, public_only, proxy, dont_download)
         else:
-            await self._download(link.split("?")[0], handle_merge, public_only, proxy, dont_download)
+            await self._download(link, handle_merge, public_only, proxy, dont_download)
         return self.result
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='download instagram posts and reels')
@@ -491,7 +503,7 @@ if __name__ == "__main__":
     parser.add_argument("--no-download", "-nd", action="store_true", help="whether to not download the post and just return the data")
     args = parser.parse_args()
     if '?' in args.link:
-        args.link = args.link.split('?')[0]
+        args.link = args.link
     insta = instadownloader()
     asyncio.run(insta.download(args.link, handle_merge=not args.handle_merge, public_only=args.public_only, proxy=args.proxy, verbose=args.verbose))
     if not insta.result:
