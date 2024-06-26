@@ -406,9 +406,9 @@ class instadownloader:
         user = eval(f"post{self._path_parser(self._find_key(post, 'owner'))}")
         username = user.get('username')
         profile_pic = user.get('profile_pic_url')
-        likes = eval(f"post{self._path_parser(self._find_key(post, 'like_count'))}")
+        likes = eval(f"post{self._path_parser(self._find_key(post, 'like_count', False))}")
         comments = eval(f"post{self._path_parser(self._find_key(post, 'comment_count', False))}")
-        caption = eval(f"post{self._path_parser(self._find_key(post, 'caption'))}")
+        caption = eval(f"post{self._path_parser(self._find_key(post, 'caption', False))}")
         if caption:
             caption = caption.get("text")
         date_posted = eval(f"post{self._path_parser(self._find_key(post, 'taken_at'))}")
