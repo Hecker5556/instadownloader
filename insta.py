@@ -78,22 +78,26 @@ class instadownloader:
             except Exception as e:
                 self.logger.debug(f"Error in getting graphql response:\n{traceback.format_exc()}")
                 return None
-    def _find_key(self, obj, searching_for: str):
+    def _find_key(self, obj, searching_for: str, not_null: bool = True):
         path = []
         if isinstance(obj, dict):
             for key, value in obj.items():
                 if key == searching_for:
-                    path.append(key)
-                    return path
+                    if not_null and value:
+                        path.append(key)
+                        return path
+                    elif not not_null:
+                        path.append(key)
+                        return path
 
-                result = self._find_key(value, searching_for)
+                result = self._find_key(value, searching_for, not_null)
                 if result:
                     path.append(key)
                     path += result
                     return path
         elif isinstance(obj, list):
             for index, i in enumerate(obj):
-                result = self._find_key(i, searching_for)
+                result = self._find_key(i, searching_for, not_null)
                 if result:
                     path.append(index)
                     path += result
@@ -382,6 +386,8 @@ class instadownloader:
         else:
             post = await self._get_info_from_source(link)
         items = eval(f"post{self._path_parser(self._find_key(post, 'items'))}")
+        with open("items.json", "w") as f1:
+            json.dump(items, f1, indent=4)
         self.media = {}
         if isinstance(items, dict) and items.get('message') and "Media not found" in items['message'] and items['status'] == 'fail':
             post = await self._get_info_from_source(link)
@@ -401,7 +407,7 @@ class instadownloader:
         username = user.get('username')
         profile_pic = user.get('profile_pic_url')
         likes = eval(f"post{self._path_parser(self._find_key(post, 'like_count'))}")
-        comments = eval(f"post{self._path_parser(self._find_key(post, 'comment_count'))}")
+        comments = eval(f"post{self._path_parser(self._find_key(post, 'comment_count', False))}")
         caption = eval(f"post{self._path_parser(self._find_key(post, 'caption'))}")
         if caption:
             caption = caption.get("text")
