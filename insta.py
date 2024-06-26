@@ -386,8 +386,8 @@ class instadownloader:
         else:
             post = await self._get_info_from_source(link)
         items = eval(f"post{self._path_parser(self._find_key(post, 'carousel_media'))}")
-        with open("items.json", "w") as f1:
-            json.dump(items, f1, indent=4)
+        with open("post.json", "w") as f1:
+            json.dump(post, f1, indent=4)
         self.media = {}
         if isinstance(items, dict) and items.get('message') and "Media not found" in items['message'] and items['status'] == 'fail':
             post = await self._get_info_from_source(link)
@@ -406,7 +406,7 @@ class instadownloader:
         user = eval(f"post{self._path_parser(self._find_key(post, 'owner'))}")
         username = user.get('username')
         profile_pic = user.get('profile_pic_url')
-        likes = eval(f"post{self._path_parser(self._find_key(post, 'like_count', False))}")
+        likes = eval(f"post{self._path_parser(self._find_key(post, 'like_count'))}")
         comments = eval(f"post{self._path_parser(self._find_key(post, 'comment_count', False))}")
         caption = eval(f"post{self._path_parser(self._find_key(post, 'caption', False))}")
         if caption:
