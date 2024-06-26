@@ -383,7 +383,7 @@ class instadownloader:
             post = await self._get_info_from_source(link)
         items = eval(f"post{self._path_parser(self._find_key(post, 'items'))}")
         self.media = {}
-        if items.get('message') and "Media not found" in items['message'] and items['status'] == 'fail':
+        if isinstance(items, dict) and items.get('message') and "Media not found" in items['message'] and items['status'] == 'fail':
             post = await self._get_info_from_source(link)
             finder = self._path_parser(self._find_key(post, 'items'))
             if not finder:
