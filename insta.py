@@ -385,7 +385,7 @@ class instadownloader:
                 post = json.loads(response)
         else:
             post = await self._get_info_from_source(link)
-        items = eval(f"post{self._path_parser(self._find_key(post, 'items'))}")
+        items = eval(f"post{self._path_parser(self._find_key(post, 'carousel_media'))}")
         with open("items.json", "w") as f1:
             json.dump(items, f1, indent=4)
         self.media = {}
