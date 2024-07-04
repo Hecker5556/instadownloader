@@ -186,7 +186,10 @@ class instadownloader:
         async with self.session.get(f'https://www.instagram.com/p/{shortcode}/embed/captioned/', headers=headers, proxy=self.proxy) as r:
             self.logger.debug(self._format_request_info(r.request_info))
             rtext = await r.text(encoding="utf-8")
-            with open("embed_captioned.txt","w") as f1:
+            if matches := re.findall(r"u\d\d\d\d", rtext):
+                for match in matches:
+                    rtext = rtext.replace(match, f"\\{match}".encode("utf-8").decode("unicode_escape"))
+            with open("embed_captioned.txt","w", encoding="utf-8") as f1:
                 f1.write(rtext)
             return rtext
     def embed_captioned_extractor(self, response: str):
