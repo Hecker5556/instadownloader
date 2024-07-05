@@ -6,7 +6,7 @@ import asyncio, aiohttp, aiofiles, traceback
 from aiohttp_socks import ProxyConnector
 from colorama import Fore
 from yarl import URL
-
+from html import unescape
 class instadownloader:
     class no_media_id(Exception):
         def __init__(self, *args: object) -> None:
@@ -207,7 +207,7 @@ class instadownloader:
         if matches := re.findall(embedpattern, response):
             incasepattern = r"caption_title_linkified\":\"(.*?)\","
             matches = [re.sub(incasepattern, 'caption_title_linkified": "nuh uh",', matches[0])]
-
+            matches = unescape(matches[0])
             thejay = json.loads(matches[0])
             with open("embed_captioned.json", "w") as f1:
                 json.dump(thejay, f1, indent=4)
@@ -235,6 +235,8 @@ class instadownloader:
             caption_attempt = self._find_key(thejay, "caption")
             if caption_attempt:
                 caption = eval(f"thejay{self._path_parser(caption_attempt)}")
+                caption = caption.replace("<br />" ,"\n").replace("</a>", "")
+                caption = re.sub(r'<a href=\\\"(?:.*?)>', '', caption)
             if date_posted_attempt := self._find_key(thejay, "taken_at_timestamp"):
                 date_posted = eval(f"thejay{self._path_parser(date_posted_attempt)}")
             if profile_pic_attempt := self._find_key(thejay, "profile_pic_url"):
@@ -250,12 +252,15 @@ class instadownloader:
             image = re.findall(imagepattern, response)
             if not image:
                 return None
-            self.media['jpg'] = image[0].replace("amp;", "")
+            self.media['jpg'] = unescape(image[0])
             post = 'image'
             username = re.findall(r"<span class=\"UsernameText\">(.*?)<", response)[0]
             caption_pattern = r"<br />(.*?)<div class=\"CaptionComments\">"
             caption = re.findall(caption_pattern, response)
-            self.result = {"media": self.media, "username": username, "post": post, "caption": caption[0] if caption else None, 
+            if caption:
+                caption = caption[0].replace("<br />" ,"\n").replace("</a>", "")
+                caption = re.sub(r'<a href=\"(?:.*?)>', '', caption)
+            self.result = {"media": self.media, "username": username, "post": post, "caption": caption if caption else None, 
                         "posted": date_posted, "profile_pic": profile_pic, "likes": likes, "comments": comments}
     async def _downloader(self, filename, url):
         async with aiofiles.open(filename, 'wb') as f1:
