@@ -208,7 +208,7 @@ class instadownloader:
             incasepattern = r"caption_title_linkified\":\"(.*?)\","
             matches = [re.sub(incasepattern, 'caption_title_linkified": "nuh uh",', matches[0])]
             matches = unescape(matches[0])
-            thejay = json.loads(matches[0])
+            thejay = json.loads(matches)
             with open("embed_captioned.json", "w") as f1:
                 json.dump(thejay, f1, indent=4)
             if thejay.get("gql_data"):
