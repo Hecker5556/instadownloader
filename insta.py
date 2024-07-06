@@ -407,6 +407,8 @@ class instadownloader:
             items = eval(f"post{finder}")
             if post == items:
                 raise self.no_media(f"Instagram couldn't return any media")
+        elif isinstance(items, dict) and items.get('message') and 'checkpoint' in items['message']:
+            raise self.badsessionid(f"login to ur account and solve captcha\n{items['checkpoint_url']}")
         for index, item in enumerate(items):
             if item.get('video_versions'):
                 self.media[f'mp4{index}'] = item['video_versions'][0]['url']
