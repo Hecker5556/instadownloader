@@ -209,6 +209,9 @@ class instadownloader:
             incasepattern = r"caption_title_linkified\":\"(.*?)\","
             matches = [re.sub(incasepattern, 'caption_title_linkified": "nuh uh",', matches[0])]
             matches = unescape(matches[0])
+            if unicoded := re.findall(r"u[0-9a-ce-f][0-9a-f]{3}", matches):
+                for match in unicoded:
+                    matches = matches.replace(match, f"\\{match}".encode("utf-8").decode("unicode_escape"))
             thejay = json.loads(matches)
             with open("embed_captioned.json", "w") as f1:
                 json.dump(thejay, f1, indent=4)
