@@ -63,7 +63,7 @@ class instadownloader:
         }
 
         data = {'variables': '{"shortcode":"%s"}' % shortcode,
-                'doc_id': '24852649951017035'}
+                'doc_id': '25531498899829322'}
         async with self.session.post("https://www.instagram.com/graphql/query", data=data, headers=headers, cookies=self.cookies, proxy=self.proxy) as r:
             self.logger.debug(self._format_request_info(r.request_info, f"data:\n{data}"))
             response = await r.text("utf-8")
@@ -448,7 +448,7 @@ class instadownloader:
         self.result = None
         if public_only:
             await self._csrf_check(link)
-            graphql = None
+            graphql = await self._graphql_api(link)
             if graphql:
                 self.public_media_extractor(graphql)
             else:
