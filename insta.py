@@ -141,6 +141,10 @@ class instadownloader:
         caption_attempt = self._find_key(publicmedia, "text")
         if caption_attempt:
             caption = eval(f"publicmedia{self._path_parser(caption_attempt)}")
+            if matches := re.findall(r"u[0-9a-ce-f][0-9a-f]{3}", caption):
+                for match in matches:
+                    caption = caption.replace(match, f"\\{match}")
+                caption = caption.encode("utf-8").decode("unicode_escape")
         if date_posted_attempt := self._find_key(publicmedia, "taken_at_timestamp"):
             date_posted = eval(f"publicmedia{self._path_parser(date_posted_attempt)}")
         if profile_pic_attempt := self._find_key(publicmedia, "profile_pic_url"):
@@ -185,15 +189,12 @@ class instadownloader:
         }
         async with self.session.get(f'https://www.instagram.com/p/{shortcode}/embed/captioned/', headers=headers, proxy=self.proxy) as r:
             self.logger.debug(self._format_request_info(r.request_info))
-            rtext = await r.text(encoding="utf-8")
-            if matches := re.findall(r"u\d\d\d\d", rtext):
-                for match in matches:
-                    rtext = rtext.replace(match, f"\\{match}".encode("utf-8").decode("unicode_escape"))
+            rtext = await r.text()
+            rtext = rtext.replace("\\\\n", "\\n")
             with open("embed_captioned.txt","w", encoding="utf-8") as f1:
                 f1.write(rtext)
             return rtext
-    def embed_captioned_extractor(self, response: str):
- 
+    def embed_captioned_extractor(self, response: str): 
         response = response.replace("\\\\/", "/").replace("\\", "")
         embedpattern = r"\"contextJSON\":\"((?:.*?)})\""
         self.media = {}
@@ -213,6 +214,10 @@ class instadownloader:
                 json.dump(thejay, f1, indent=4)
             if thejay.get("gql_data"):
                 self.public_media_extractor(thejay.get("gql_data"))
+                if caption := re.search(r"<div class=\"Caption\"><a class=\"CaptionUsername\" href=\"(?:.*?)\" data-ios-link=\"(?:.*?)target=\"_blank\">(?:.*?)</a>(.*?)<div class=\"CaptionComments\">", response):
+                    caption = caption.group(1).replace("<br />" ,"\n").replace("</a>", "")
+                    caption = re.sub(r'<a href=\"(?:.*?)>', '', caption)
+                    self.result['caption'] = caption
                 return
             ctxmedia: dict = thejay["context"]["media"]
             if not ctxmedia:
@@ -440,7 +445,7 @@ class instadownloader:
         self.result = None
         if public_only:
             await self._csrf_check(link)
-            graphql = await self._graphql_api(link)
+            graphql = None
             if graphql:
                 self.public_media_extractor(graphql)
             else:
