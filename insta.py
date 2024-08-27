@@ -442,7 +442,7 @@ class instadownloader:
                 music['duration'] = music_data['music_info']['music_consumption_info']['overlap_duration_in_ms']/1000
         self.result = {"media": self.media, "username": username, "post": post_type, "caption": caption, 
                         "posted": date_posted, "profile_pic": profile_pic, "likes": likes, "comments": comments, 'music': music}
-    async def _download(self, link: str, handle_merge: bool = True, public_only: bool = True, proxy: str = None, dont_download: bool = False):
+    async def _download(self, link: str, handle_merge: bool = True, public_only: bool = True, proxy: str = None, dont_download: bool = False, merge_music: bool = True):
         if ('stories' in link or 'highlights' in link) and public_only:
             raise ValueError(f"cant grab stories without credentials")
         self.result = None
@@ -467,7 +467,7 @@ class instadownloader:
             raise self.get_info_fail(f"couldnt find anything")
         if not dont_download:
             filenames = await self._download_post()
-            if handle_merge and self.result.get('music') and self.result.get('post') == 'image':
+            if handle_merge and self.result.get('music') and self.result.get('post') == 'image' and merge_music:
                 process = await asyncio.subprocess.create_subprocess_exec("ffmpeg", *["-version"], stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
                 result = await process.wait()
                 if result != 0:
@@ -492,7 +492,7 @@ class instadownloader:
                     filenames.append(filenames[0].replace('jpg', 'mp4'))
                 os.remove(filename)
             self.result['filenames'] = filenames
-    async def download(self, link: str, handle_merge: bool = True, public_only: bool = True, proxy: str = None, verbose: bool = False, dont_download: bool = False):
+    async def download(self, link: str, handle_merge: bool = True, public_only: bool = True, proxy: str = None, verbose: bool = False, dont_download: bool = False, merge_music: bool = True):
         if verbose:
             logging.basicConfig(level=logging.DEBUG, format="%(message)s")
         else:
@@ -515,9 +515,9 @@ class instadownloader:
         if not hasattr(self, "session"):
             async with aiohttp.ClientSession(connector=self.giveconnector(proxy)) as session:
                 self.session = session
-                await self._download(link, handle_merge, public_only, proxy, dont_download)
+                await self._download(link, handle_merge, public_only, proxy, dont_download, merge_music)
         else:
-            await self._download(link, handle_merge, public_only, proxy, dont_download)
+            await self._download(link, handle_merge, public_only, proxy, dont_download, merge_music)
         return self.result
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='download instagram posts and reels')
