@@ -195,7 +195,7 @@ class instadownloader:
                 f1.write(rtext)
             return rtext
     def embed_captioned_extractor(self, response: str): 
-        response = response.replace("\\\\/", "/").replace("\\", "")
+        response = response.replace("\\\\", "\\").replace("\\", "")
         embedpattern = r"\"contextJSON\":\"((?:.*?)})\""
         self.media = {}
         date_posted = None
@@ -210,9 +210,22 @@ class instadownloader:
             matches = [re.sub(incasepattern, 'caption_title_linkified": "nuh uh",', matches[0])]
             matches = unescape(matches[0])
             if unicoded := re.findall(r"u[0-9a-ce-f][0-9a-f]{3}", matches):
-                for match in unicoded:
-                    matches = matches.replace(match, f"\\{match}".encode("utf-8").decode("unicode_escape"))
-            thejay = json.loads(matches)
+                matches = re.sub(r"u[0-9a-f]{4}", lambda x: f"\\{x[0]}", matches)
+                matches = matches.encode("utf-8").decode("unicode_escape")
+
+            try:
+                thejay = json.loads(matches)
+            except json.decoder.JSONDecodeError as e:
+                caption = re.search(r"\"text\":\"(.*?)\"}", matches).group(1)
+                matches = matches.replace(caption, caption.replace('"', '\\"'))
+                # matches = re.sub(r"\"text\":\"(.*?)\"}", lambda x: '"text":"' + x.group(1).replace('"', '\\"') + '"}', matches)
+                try:
+                    thejay = json.loads(matches)
+                except Exception as e:
+                    patternchar = r"char (\d+)"
+                    character = int(re.search(patternchar, str(e)).group(1))
+                    print(matches[character-200:character+200])
+                    exit(1)
             with open("embed_captioned.json", "w") as f1:
                 json.dump(thejay, f1, indent=4)
             if thejay.get("gql_data"):
@@ -220,7 +233,7 @@ class instadownloader:
                 if caption := re.search(r"<div class=\"Caption\"><a class=\"CaptionUsername\" href=\"(?:.*?)\" data-ios-link=\"(?:.*?)target=\"_blank\">(?:.*?)</a>(.*?)<div class=\"CaptionComments\">", response):
                     caption = caption.group(1).replace("<br />" ,"\n").replace("</a>", "")
                     caption = re.sub(r'<a href=\"(?:.*?)>', '', caption)
-                    self.result['caption'] = caption
+                    self.result['caption'] = unescape(caption)
                 return
             ctxmedia: dict = thejay["context"]["media"]
             if not ctxmedia:
