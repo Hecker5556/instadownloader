@@ -216,10 +216,10 @@ class instadownloader:
             try:
                 thejay = json.loads(matches)
             except json.decoder.JSONDecodeError as e:
-                caption = re.search(r"\"text\":\"(.*?)\"}", matches).group(1)
-                matches = matches.replace(caption, caption.replace('"', '\\"'))
-                song_name = re.search(r"\"song_name\":\"(.*?)\",\"uses_original", matches).group(1)
-                matches = matches.replace(song_name, song_name.replace('"', '\\"'))
+                if caption := re.search(r"\"text\":\"(.*?)\"}", matches):
+                    matches = matches.replace(caption.group(1), caption.group(1).replace('"', '\\"'))
+                if song_name := re.search(r"\"song_name\":\"(.*?)\",\"uses_original", matches):
+                    matches = matches.replace(song_name.group(1), song_name.group(1).replace('"', '\\"'))
                 # matches = re.sub(r"\"text\":\"(.*?)\"}", lambda x: '"text":"' + x.group(1).replace('"', '\\"') + '"}', matches)
                 try:
                     thejay = json.loads(matches)
