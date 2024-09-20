@@ -176,7 +176,7 @@ class instadownloader:
             f1.write(f"{self.csrf} EXPIRY {(datetime.now()+timedelta(hours=6)).isoformat()}")
         self.cookies['csrftoken'] = self.csrf
     async def _embed_captioned(self, link: str):
-        patternshortcode = r"https://(?:www)?\.instagram\.com/(?:reels||p||stories||reel||story)/(.*?)/?$"
+        patternshortcode = r"https://(?:www\.)?instagram\.com/(?:reels||p||stories||reel||story)/(.*?)/?$"
         shortcode = re.findall(patternshortcode, link.split("?")[0])[0]
         headers = {
             'authority': 'www.instagram.com',
