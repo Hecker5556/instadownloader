@@ -46,7 +46,7 @@ class instadownloader:
         url = request.url
         return f"sending {Fore.BLUE}{method}{Fore.RESET} request to {Fore.CYAN}{url}{Fore.RESET} using headers:\n{headers}\nother info:\n{other_info}"
     async def _graphql_api(self, link: str):
-        patternshortcode = r"https://(?:www)?\.instagram\.com/(?:reels||p||stories||reel||story)/(.*?)/?$"
+        patternshortcode = r"https://(?:www\.)?instagram\.com/(?:reels||p||stories||reel||story)/(.*?)/?$"
         shortcode = re.findall(patternshortcode, link.split("?")[0])[0]
         headers = {
             'authority': 'www.instagram.com',
