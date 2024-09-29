@@ -137,7 +137,8 @@ class instadownloader:
         else:
             post = "image"
             self.media["jpg"] = eval(f"publicmedia{self._path_parser(self._find_key(publicmedia, 'display_resources'))}")[-1]['src']
-        username = eval(f"publicmedia{self._path_parser(self._find_key(publicmedia, 'username'))}")
+        owner = eval(f"publicmedia{self._path_parser(self._find_key(publicmedia, 'owner'))}")
+        username = owner.get("username")
         caption_attempt = self._find_key(publicmedia, "text")
         if caption_attempt:
             caption = eval(f"publicmedia{self._path_parser(caption_attempt)}")
@@ -147,8 +148,8 @@ class instadownloader:
                 caption = caption.encode("utf-8").decode("unicode_escape")
         if date_posted_attempt := self._find_key(publicmedia, "taken_at_timestamp"):
             date_posted = eval(f"publicmedia{self._path_parser(date_posted_attempt)}")
-        if profile_pic_attempt := self._find_key(publicmedia, "profile_pic_url"):
-            profile_pic = eval(f"publicmedia{self._path_parser(profile_pic_attempt)}")
+        if profile_pic_attempt := owner.get("profile_pic_url"):
+            profile_pic = profile_pic_attempt
         if likes_attempt := self._find_key(publicmedia, "edge_liked_by"):
             likes = eval(f"publicmedia{self._path_parser(likes_attempt)}").get('count')
         elif likes_attempt := self._find_key(publicmedia, "edge_media_preview_like"):
