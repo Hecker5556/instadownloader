@@ -46,7 +46,7 @@ class instadownloader:
         url = request.url
         return f"sending {Fore.BLUE}{method}{Fore.RESET} request to {Fore.CYAN}{url}{Fore.RESET} using headers:\n{headers}\nother info:\n{other_info}"
     async def _graphql_api(self, link: str):
-        patternshortcode = r"https://(?:www\.)?instagram\.com/(?:reels||p||stories||reel||story)/(.*?)/?$"
+        patternshortcode = r"https://(?:www\.)?instagram\.com/(?:\S+/)?(?:reels||p||stories||reel||story||tv)/(\S+)/"
         shortcode = re.findall(patternshortcode, link.split("?")[0])[0]
         headers = {
             'authority': 'www.instagram.com',
@@ -177,7 +177,7 @@ class instadownloader:
             f1.write(f"{self.csrf} EXPIRY {(datetime.now()+timedelta(hours=6)).isoformat()}")
         self.cookies['csrftoken'] = self.csrf
     async def _embed_captioned(self, link: str):
-        patternshortcode = r"https://(?:www\.)?instagram\.com/(?:reels||p||stories||reel||story)/(.*?)/?$"
+        patternshortcode = r"https://(?:www\.)?instagram\.com/(?:\S+/)?(?:reels||p||stories||reel||story||tv)/(\S+)/"
         shortcode = re.findall(patternshortcode, link.split("?")[0])[0]
         headers = {
             'authority': 'www.instagram.com',
@@ -462,6 +462,8 @@ class instadownloader:
         if ('stories' in link or 'highlights' in link) and public_only:
             raise ValueError(f"cant grab stories without credentials")
         self.result = None
+        if not link.endswith("/") and "?" not in link:
+            link = link + "/"
         if public_only:
             await self._csrf_check(link)
             graphql = await self._graphql_api(link)
