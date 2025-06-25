@@ -26,8 +26,7 @@ class instadownloader:
     def __init__(self):
         self.sessionid = None
     def giveconnector(self, proxy):
-        self.proxy = proxy if proxy and proxy.startswith("https") else None
-        return ProxyConnector.from_url(proxy) if proxy and proxy.startswith("socks") else aiohttp.TCPConnector()
+        return ProxyConnector.from_url(proxy) if proxy else aiohttp.TCPConnector()
     def get_credentials(self):
         try:
             import env
@@ -64,7 +63,7 @@ class instadownloader:
 
         data = {'variables': '{"shortcode":"%s"}' % shortcode,
                 'doc_id': '25531498899829322'}
-        async with self.session.post("https://www.instagram.com/graphql/query", data=data, headers=headers, cookies=self.cookies, proxy=self.proxy) as r:
+        async with self.session.post("https://www.instagram.com/graphql/query", data=data, headers=headers, cookies=self.cookies) as r:
             self.logger.debug(self._format_request_info(r.request_info, f"data:\n{data}"))
             response = await r.text("utf-8")
             try:
@@ -117,7 +116,37 @@ class instadownloader:
             self.media[f"mp4{idx}"] = node.get("video_url")
         elif node["is_video"] == False:
             self.media[f"jpg{idx}"] = node["display_resources"][-1]['src']
-            
+    def _source_extractor(self, source: dict):
+        info = eval(f"source{self._path_parser(self._find_key(source, 'items'))}")[0]
+        self.media = {}
+        username = None
+        caption = None
+        date_posted = None
+        profile_pic = None
+        likes = None
+        comments = None   
+        if info.get("carousel_media"):
+            post = 'multiple'
+            for index, i in enumerate(info['carousel_media']):
+                if i.get('video_versions'):
+                    self.media[f'mp4{index}'] = i['video_versions'][-1]['url']
+                else:
+                    self.media[f'jpg{index}'] = i['image_versions2']['candidates'][0]['url']
+        elif info.get("video_versions"):
+            post = 'reel'
+            self.media['mp4'] = info['video_versions'][-1]['url']
+        else:
+            post = 'image'
+            self.media['jpg'] = info['image_versions2']['candidates'][0]['url']
+        owner = eval(f"info{self._path_parser(self._find_key(info, 'owner'))}")
+        username = owner.get("username")
+        caption = info.get("caption", {}).get("text", "")
+        date_posted = info.get("taken_at")
+        profile_pic = owner.get("profile_pic_url")
+        likes = info.get('like_count')
+        comments = info.get('comment_count')
+        self.result = {"media": self.media, "username": username, "post": post, "caption": caption, 
+                       "posted": date_posted, "profile_pic": profile_pic, "likes": likes, "comments": comments}
     def public_media_extractor(self, publicmedia: dict):
         self.media = {}
         username = None
@@ -161,7 +190,7 @@ class instadownloader:
     async def _get_csrf_token(self, link: str):
         patterncsrf = re.compile(r"{\"csrf_token\":\"(.*?)\"}")
         matches = None
-        async with self.session.get(link, headers=self.headers, cookies=self.cookies, proxy=self.proxy) as r:
+        async with self.session.get(link, headers=self.headers, cookies=self.cookies) as r:
             self.logger.debug(self._format_request_info(r.request_info))
             while True:
                 chunk = await r.content.read(1024)
@@ -174,7 +203,7 @@ class instadownloader:
             raise self.get_info_fail(f"couldnt get a csrf token")
         self.csrf = matches[0]
         with open("csrf.txt", 'w') as f1:
-            f1.write(f"{self.csrf} EXPIRY {(datetime.now()+timedelta(hours=6)).isoformat()}")
+            f1.write(f"{self.csrf} EXPIRY {(datetime.now()+timedelta(hours=1)).isoformat()}")
         self.cookies['csrftoken'] = self.csrf
     async def _embed_captioned(self, link: str):
         patternshortcode = r"https://(?:www\.)?instagram\.com/(?:\S+/)?(?:reels||p||stories||reel||story||tv)/(\S+)/"
@@ -188,7 +217,7 @@ class instadownloader:
             'sec-fetch-mode': 'navigate',
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
-        async with self.session.get(f'https://www.instagram.com/p/{shortcode}/embed/captioned/', headers=headers, proxy=self.proxy) as r:
+        async with self.session.get(f'https://www.instagram.com/p/{shortcode}/embed/captioned/', headers=headers) as r:
             self.logger.debug(self._format_request_info(r.request_info))
             rtext = await r.text()
             rtext = rtext.replace("\\\\n", "\\n")
@@ -311,7 +340,7 @@ class instadownloader:
             index += 1
         return filenames
     async def _get_highlights(self, link: str):
-        async with self.session.get(link, headers=self.headers, cookies=self.cookies, proxy=self.proxy) as r:
+        async with self.session.get(link, headers=self.headers, cookies=self.cookies) as r:
             self.logger.debug(self._format_request_info(r.request_info))
             response = await r.text("utf-8")
             pattern = r"({\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisStoriesV\dHighlightsPageQueryRelayPreloader_(?:.*?)\",{\"__bbox\"(?:.*?),{\"__bbox\":null}]]]})</script>"
@@ -338,7 +367,7 @@ class instadownloader:
                         "posted": date_posted, "profile_pic": profile_pic, "likes": None, "comments": None, "thumbnail": thumbnail}
     async def _get_story(self, link: str):
         story_pattern = r"({\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisStoriesV3ReelPageStandalone(?:.*?))</script>"
-        async with self.session.get(link, headers=self.headers, cookies=self.cookies, proxy=self.proxy) as r:
+        async with self.session.get(link, headers=self.headers, cookies=self.cookies) as r:
             self.logger.debug(self._format_request_info(r.request_info))
             response = await r.text("utf-8")
             if not (matches := re.findall(story_pattern, response)):
@@ -370,15 +399,16 @@ class instadownloader:
                     read = f1.read()
                     csrf, expiry = read.split(" EXPIRY ")[0], read.split(" EXPIRY ")[1]
                     if datetime.now() > datetime.fromisoformat(expiry):
+                        self.logger.debug("fetching new csrf token")
                         await self._get_csrf_token(link)
                     else:
                         self.csrf = csrf
                         self.cookies['csrftoken'] = self.csrf
     async def _get_info_from_source(self, link):
-        allmedia =r'(\{\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":\{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisPostRoot(?:.*?))</script>'
+        allmedia =r'<script type=\"application/json\"  data-content-len=\"\d+\" data-sjs>(\{\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":\{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisPostRootQueryRelayPreloader_(?:.*?))</script>'
         patternmediaid = r"content=\"instagram://media\?id=(.*?)\""
         try:
-            async with self.session.get(link, headers=self.headers, cookies=self.cookies, proxy=self.proxy) as r:
+            async with self.session.get(link, headers=self.headers,) as r:
                 self.logger.debug(self._format_request_info(r.request_info))
                 response = await r.text("utf-8")
                 with open("response.txt", "w", encoding="utf-8") as f1:
@@ -386,17 +416,16 @@ class instadownloader:
         except aiohttp.TooManyRedirects:
             self.logger.info(f"{Fore.RED}Too many redirects! get a new sessionid{Fore.RESET}")
             raise self.badsessionid(f"get a new sessionid!")
-        if not (mediaid := re.findall(patternmediaid, response)):
-            post = json.loads(re.findall(allmedia, response)[0])
-        if not (matches := re.findall(allmedia, response)):
+        if not (matches := re.search(allmedia, response)):
             raise self.get_info_fail(f"couldnt grab info from post")
-        post = json.loads(matches[0])
+        post = json.loads(re.search(allmedia, response).group(1))
         with open("post.json", "w") as f1:
-            json.dump(post, f1, indent=4)
+            json.dump(post, f1, indent=4, ensure_ascii=False)
         return post
+
     async def _get_post(self, link: str):
 
-        async with self.session.get(link, headers=self.headers, proxy=self.proxy) as r:
+        async with self.session.get(link, headers=self.headers) as r:
             self.logger.debug(self._format_request_info(r.request_info))
             response = await r.text("utf-8")
             with open("response.txt", "w", encoding="utf-8") as f1:
@@ -411,7 +440,7 @@ class instadownloader:
                 self.csrf = csrf[0]
             self.headers['x-csrftoken'] = self.csrf
             self.headers['x-ig-app-id'] = "936619743392459"
-            async with self.session.get(f"https://www.instagram.com/api/v1/media/{mediaid[0]}/info", headers = self.headers, cookies=self.cookies, proxy=self.proxy) as r:
+            async with self.session.get(f"https://www.instagram.com/api/v1/media/{mediaid[0]}/info", headers = self.headers, cookies=self.cookies) as r:
                 self.logger.debug(self._format_request_info(r.request_info))
                 response = await r.text(encoding="utf-8")
                 post = json.loads(response)
@@ -470,9 +499,15 @@ class instadownloader:
             if graphql:
                 self.public_media_extractor(graphql)
             else:
-                self.logger.debug(f"Grabbing post from embed")
-                embed_captioned = await self._embed_captioned(link)
-                self.embed_captioned_extractor(embed_captioned)
+                self.logger.debug(f"Grabbing post from source")
+                try:
+                    source_result = await self._get_info_from_source(link)
+                    self._source_extractor(source_result)
+                except Exception as e:
+                    self.logger.debug(f"Errored!: \n{traceback.format_exc()}")
+                    self.logger.debug("fetching embed captioned")
+                    embed_captioned = await self._embed_captioned(link)
+                    self.embed_captioned_extractor(embed_captioned)
         else:
             if "highlights" in link:
                 await self._get_highlights(link)
@@ -522,13 +557,27 @@ class instadownloader:
             else:
                 self.cookies = {"sessionid": self.sessionid}
         else:
-            self.cookies = {}
+            self.cookies = {
+            }
+
         self.headers = {
-            'authority': 'www.instagram.com',
             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'accept-language': 'en-US,en;q=0.7',
+            'accept-language': 'en-US,en;q=0.6',
+            'cache-control': 'max-age=0',
+            'priority': 'u=0, i',
+            'sec-ch-ua': '"Chromium";v="136", "Brave";v="136", "Not.A/Brand";v="99"',
+            'sec-ch-ua-full-version-list': '"Chromium";v="136.0.0.0", "Brave";v="136.0.0.0", "Not.A/Brand";v="99.0.0.0"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-model': '""',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-ch-ua-platform-version': '"10.0.0"',
+            'sec-fetch-dest': 'document',
             'sec-fetch-mode': 'navigate',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-user': '?1',
+            'sec-gpc': '1',
+            'upgrade-insecure-requests': '1',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
         }
         if not hasattr(self, "session"):
             async with aiohttp.ClientSession(connector=self.giveconnector(proxy)) as session:
