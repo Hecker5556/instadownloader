@@ -257,7 +257,7 @@ class instadownloader:
                     patternchar = r"char (\d+)"
                     character = int(re.search(patternchar, str(e)).group(1))
                     print(matches[character-200:character+200])
-                    exit(1)
+                    raise Exception(f"Failed to extract from embed captioned, error around: {matches[character-200:character+200]}")
             with open("embed_captioned.json", "w") as f1:
                 json.dump(thejay, f1, indent=4)
             if thejay.get("gql_data"):
