@@ -250,10 +250,15 @@ class instadownloader:
                     matches = matches.replace(caption.group(1), caption.group(1).replace('"', '\\"'))
                 if song_name := re.search(r"\"song_name\":\"(.*?)\",\"uses_original", matches):
                     matches = matches.replace(song_name.group(1), song_name.group(1).replace('"', '\\"'))
+                if access_caption := re.findall(r"\"accessibility_caption\":\"(.*?)\",\"media_overlay_info\"", matches):
+                    for i in access_caption:
+                        matches = matches.replace(i, i.replace('"', '\\"'))
                 # matches = re.sub(r"\"text\":\"(.*?)\"}", lambda x: '"text":"' + x.group(1).replace('"', '\\"') + '"}', matches)
                 try:
                     thejay = json.loads(matches)
                 except Exception as e:
+                    with open("matches.txt", "w", encoding="utf-8") as f1:
+                        f1.write(matches)
                     patternchar = r"char (\d+)"
                     character = int(re.search(patternchar, str(e)).group(1))
                     print(matches[character-200:character+200])
