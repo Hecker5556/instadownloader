@@ -140,7 +140,7 @@ class instadownloader:
             self.media['jpg'] = info['image_versions2']['candidates'][0]['url']
         owner = eval(f"info{self._path_parser(self._find_key(info, 'owner'))}")
         username = owner.get("username")
-        caption = info.get("caption", {}).get("text", "")
+        caption = info.get("caption", {}).get("text", "") if 'caption' in info and info['caption'] != None else None
         date_posted = info.get("taken_at")
         profile_pic = owner.get("profile_pic_url")
         likes = info.get('like_count')
