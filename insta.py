@@ -138,7 +138,7 @@ class instadownloader:
         else:
             post = 'image'
             self.media['jpg'] = info['image_versions2']['candidates'][0]['url']
-        owner = eval(f"info{self._path_parser(self._find_key(info, 'owner'))}")
+        owner = eval(f"info{self._path_parser(self._find_key(info, 'user'))}")
         username = owner.get("username")
         caption = info.get("caption", {}).get("text", "") if 'caption' in info and info['caption'] != None else None
         date_posted = info.get("taken_at")
@@ -424,7 +424,7 @@ class instadownloader:
         if not (matches := re.search(allmedia, response)):
             raise self.get_info_fail(f"couldnt grab info from post")
         post = json.loads(re.search(allmedia, response).group(1))
-        with open("post.json", "w") as f1:
+        with open("post.json", "w", encoding="utf-8") as f1:
             json.dump(post, f1, indent=4, ensure_ascii=False)
         return post
 
@@ -603,7 +603,7 @@ if __name__ == "__main__":
     if '?' in args.link:
         args.link = args.link
     insta = instadownloader()
-    asyncio.run(insta.download(args.link, handle_merge=not args.handle_merge, public_only=args.public_only, proxy=args.proxy, verbose=args.verbose))
+    asyncio.run(insta.download(args.link, handle_merge=not args.handle_merge, public_only=args.public_only, proxy=args.proxy, verbose=args.verbose, dont_download=args.no_download))
     if not insta.result:
         print('error occured')
     else:
