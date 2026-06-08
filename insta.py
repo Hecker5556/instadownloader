@@ -332,7 +332,7 @@ class InstagramDownloader:
             else:
                 if item.get("video_versions"):
                     return {
-                        'url': item['video_versions'][0],
+                        'url': item['video_versions'][0]['url'],
                         'type': 'video',
                     }
                 else:
