@@ -581,10 +581,10 @@ class InstagramDownloader:
         if data.get('music'):
             data['music']['url'] = await self.getMusicUrl(data['music']['id'])
         
-        if returnInfo:
-            return data
         data['filenames'] = []
         data['shortCode'] = shortCode
+        if returnInfo:
+            return data
         await self._downloadPost(data)
         return data
 
