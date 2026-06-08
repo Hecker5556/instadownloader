@@ -1,571 +1,34 @@
-import json, re, os, logging, traceback, cv2
-from tqdm.asyncio import tqdm
-from datetime import datetime, timedelta
-import argparse
-import asyncio, aiohttp, aiofiles, traceback
+import aiohttp
 from aiohttp_socks import ProxyConnector
-from colorama import Fore
-from yarl import URL
-from html import unescape
-class instadownloader:
-    class no_media_id(Exception):
-        def __init__(self, *args: object) -> None:
-            super().__init__(*args)
-    class badsessionid(Exception):
-        def __init__(self, *args: object) -> None:
-            super().__init__(*args)
-    class no_media(Exception):
-        def __init__(self, *args: object) -> None:
-            super().__init__(*args)
-    class get_info_fail(Exception):
-        def __init__(self, *args: object) -> None:
-            super().__init__(*args)
-    class no_credentials(Exception):
-        def __init__(self, *args: object) -> None:
-            super().__init__(*args)
-    def __init__(self):
-        self.sessionid = None
-    def giveconnector(self, proxy):
-        return ProxyConnector.from_url(proxy) if proxy else aiohttp.TCPConnector()
-    def get_credentials(self):
-        try:
-            import env
-            self.sessionid = env.sessionid
-            self.cookies = {"sessionid": self.sessionid}
-            self.logger.debug(f"{Fore.GREEN}found credentials in env.py{Fore.RESET}")
-        except ModuleNotFoundError:
-            if not hasattr(self, "sessionid"):
-                raise self.no_credentials(f"{Fore.RED}couldnt find credentials (sessionid), make sure to make an env.py file and write\n{Fore.RESET}sessionid = \"YOURSESSIONID\"")
-    def _format_request_info(self, request: aiohttp.RequestInfo, other_info = None):
-        method = request.method
-        headers = {}
-        for key, value in request.headers.items():
-            headers[key] = value
-        headers = json.dumps(headers, indent=4)
-        url = request.url
-        return f"sending {Fore.BLUE}{method}{Fore.RESET} request to {Fore.CYAN}{url}{Fore.RESET} using headers:\n{headers}\nother info:\n{other_info}"
-    async def _graphql_api(self, link: str):
-        patternshortcode = r"https://(?:www\.)?instagram\.com/(?:\S+/)?(?:reels||p||stories||reel||story||tv)/(\S+)/"
-        shortcode = re.findall(patternshortcode, link.split("?")[0])[0]
-        headers = {
-            'authority': 'www.instagram.com',
-            'accept': '*/*',
-            'accept-language': 'en-US,en;q=0.6',
-            'content-type': 'application/x-www-form-urlencoded',
-            'origin': 'https://www.instagram.com',
-            'referer': link,
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-site': 'same-origin',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'x-csrftoken': self.csrf,
-            'x-ig-app-id': '936619743392459',
-        }
+import aiofiles
+import asyncio
+import json
+import traceback
+import re
+import os
+import logging
+import mimetypes
+from datetime import datetime
 
-        data = {'variables': '{"shortcode":"%s"}' % shortcode,
-                'doc_id': '25531498899829322'}
-        async with self.session.post("https://www.instagram.com/graphql/query", data=data, headers=headers, cookies=self.cookies) as r:
-            self.logger.debug(self._format_request_info(r.request_info, f"data:\n{data}"))
-            response = await r.text("utf-8")
-            try:
-                thejson = json.loads(response)
-                with open("graphql.json", "w") as f1:
-                    json.dump(thejson, f1, indent=4)
-                if not thejson['data'].get("xdt_shortcode_media"):
-                    self.logger.debug(f"couldnt find data in graphql, response written in graphql.json")
-                    return None
-                return thejson
-            except Exception as e:
-                self.logger.debug(f"Error in getting graphql response:\n{traceback.format_exc()}")
-                return None
-    def _find_key(self, obj, searching_for: str, not_null: bool = True):
-        path = []
-        if isinstance(obj, dict):
-            for key, value in obj.items():
-                if key == searching_for:
-                    if not_null and value:
-                        path.append(key)
-                        return path
-                    elif not not_null:
-                        path.append(key)
-                        return path
-
-                result = self._find_key(value, searching_for, not_null)
-                if result:
-                    path.append(key)
-                    path += result
-                    return path
-        elif isinstance(obj, list):
-            for index, i in enumerate(obj):
-                result = self._find_key(i, searching_for, not_null)
-                if result:
-                    path.append(index)
-                    path += result
-                    return path
-
-        return path
-    def _path_parser(self, path):
-        templist = []
-        for i in path:
-            if isinstance(i, str):
-                templist.append(f"['{i}']")
-            elif isinstance(i, int):
-                templist.append(f"[{i}]")
-        return ''.join(templist)
-    def _node_parser(self, node: dict, idx: int):
-        if node.get("video_url"):
-            self.media[f"mp4{idx}"] = node.get("video_url")
-        elif node["is_video"] == False:
-            self.media[f"jpg{idx}"] = node["display_resources"][-1]['src']
-    def _source_extractor(self, source: dict):
-        info = eval(f"source{self._path_parser(self._find_key(source, 'items'))}")[0]
-        self.media = {}
-        username = None
-        caption = None
-        date_posted = None
-        profile_pic = None
-        likes = None
-        comments = None   
-        if info.get("carousel_media"):
-            post = 'multiple'
-            for index, i in enumerate(info['carousel_media']):
-                if i.get('video_versions'):
-                    self.media[f'mp4{index}'] = i['video_versions'][-1]['url']
-                else:
-                    self.media[f'jpg{index}'] = i['image_versions2']['candidates'][0]['url']
-        elif info.get("video_versions"):
-            post = 'reel'
-            self.media['mp4'] = info['video_versions'][-1]['url']
-        else:
-            post = 'image'
-            self.media['jpg'] = info['image_versions2']['candidates'][0]['url']
-        owner = eval(f"info{self._path_parser(self._find_key(info, 'user'))}")
-        username = owner.get("username")
-        caption = info.get("caption", {}).get("text", "") if 'caption' in info and info['caption'] != None else None
-        date_posted = info.get("taken_at")
-        profile_pic = owner.get("profile_pic_url")
-        likes = info.get('like_count')
-        comments = info.get('comment_count')
-        self.result = {"media": self.media, "username": username, "post": post, "caption": caption, 
-                       "posted": date_posted, "profile_pic": profile_pic, "likes": likes, "comments": comments}
-    def public_media_extractor(self, publicmedia: dict):
-        self.media = {}
-        username = None
-        caption = None
-        date_posted = None
-        profile_pic = None
-        likes = None
-        comments = None
-        if sidecar := self._find_key(publicmedia, "edge_sidecar_to_children"):
-            sidecar = eval(f"publicmedia{self._path_parser(sidecar)}")
-            post = "multiple"
-            for index, slide in enumerate(sidecar.get("edges")):
-                self._node_parser(slide["node"], index)
-        elif video := self._find_key(publicmedia, "video_url"):
-            post = "reel"
-            self.media["mp4"] = eval(f'publicmedia{self._path_parser(video)}')
-        else:
-            post = "image"
-            self.media["jpg"] = eval(f"publicmedia{self._path_parser(self._find_key(publicmedia, 'display_resources'))}")[-1]['src']
-        owner = eval(f"publicmedia{self._path_parser(self._find_key(publicmedia, 'owner'))}")
-        username = owner.get("username")
-        caption_attempt = self._find_key(publicmedia, "text")
-        if caption_attempt:
-            caption = eval(f"publicmedia{self._path_parser(caption_attempt)}")
-            if matches := re.findall(r"u[0-9a-ce-f][0-9a-f]{3}", caption):
-                for match in matches:
-                    caption = caption.replace(match, f"\\{match}")
-                caption = caption.encode("utf-8").decode("unicode_escape")
-        if date_posted_attempt := self._find_key(publicmedia, "taken_at_timestamp"):
-            date_posted = eval(f"publicmedia{self._path_parser(date_posted_attempt)}")
-        if profile_pic_attempt := owner.get("profile_pic_url"):
-            profile_pic = profile_pic_attempt
-        if likes_attempt := self._find_key(publicmedia, "edge_liked_by"):
-            likes = eval(f"publicmedia{self._path_parser(likes_attempt)}").get('count')
-        elif likes_attempt := self._find_key(publicmedia, "edge_media_preview_like"):
-            likes = eval(f"publicmedia{self._path_parser(likes_attempt)}").get('count')
-        if comments_attempt := self._find_key(publicmedia, "edge_media_to_comment"):
-            comments = eval(f"publicmedia{self._path_parser(comments_attempt)}").get('count')
-        self.result = {"media": self.media, "username": username, "post": post, "caption": caption, 
-                       "posted": date_posted, "profile_pic": profile_pic, "likes": likes, "comments": comments}
-    async def _get_csrf_token(self, link: str):
-        patterncsrf = re.compile(r"{\"csrf_token\":\"(.*?)\"}")
-        matches = None
-        async with self.session.get(link, headers=self.headers, cookies=self.cookies) as r:
-            self.logger.debug(self._format_request_info(r.request_info))
-            while True:
-                chunk = await r.content.read(1024)
-                if not chunk:
-                    break
-                chunk = chunk.decode("utf-8")
-                if matches := re.findall(patterncsrf, chunk):
-                    break
-        if not matches:
-            raise self.get_info_fail(f"couldnt get a csrf token")
-        self.csrf = matches[0]
-        with open("csrf.txt", 'w') as f1:
-            f1.write(f"{self.csrf} EXPIRY {(datetime.now()+timedelta(hours=1)).isoformat()}")
-        self.cookies['csrftoken'] = self.csrf
-    async def _embed_captioned(self, link: str):
-        patternshortcode = r"https://(?:www\.)?instagram\.com/(?:\S+/)?(?:reels||p||stories||reel||story||tv)/(\S+)/"
-        shortcode = re.findall(patternshortcode, link.split("?")[0])[0]
-        headers = {
-            'authority': 'www.instagram.com',
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'accept-language': 'en-US,en;q=0.8',
-            'cache-control': 'max-age=0',
-            'referer': f'https://www.instagram.com/p/{shortcode}/embed/captioned/',
-            'sec-fetch-mode': 'navigate',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        }
-        async with self.session.get(f'https://www.instagram.com/p/{shortcode}/embed/captioned/', headers=headers) as r:
-            self.logger.debug(self._format_request_info(r.request_info))
-            rtext = await r.text()
-            rtext = rtext.replace("\\\\n", "\\n")
-            with open("embed_captioned.txt","w", encoding="utf-8") as f1:
-                f1.write(rtext)
-            return rtext
-    def embed_captioned_extractor(self, response: str): 
-        response = response.replace("\\\\", "\\").replace("\\", "")
-        embedpattern = r"\"contextJSON\":\"((?:.*?)})\""
-        self.media = {}
-        date_posted = None
-        username = None
-        caption = None
-        date_posted = None
-        profile_pic = None
-        likes = None
-        comments = None
-        if matches := re.findall(embedpattern, response):
-            incasepattern = r"caption_title_linkified\":\"(.*?)\","
-            matches = [re.sub(incasepattern, 'caption_title_linkified": "nuh uh",', matches[0])]
-            matches = unescape(matches[0])
-            if unicoded := re.findall(r"u[0-9a-ce-f][0-9a-f]{3}", matches):
-                matches = re.sub(r"u[0-9a-f]{4}", lambda x: f"\\{x[0]}", matches)
-                matches = matches.encode("utf-8").decode("unicode_escape")
-
-            try:
-                thejay = json.loads(matches)
-            except json.decoder.JSONDecodeError as e:
-                if caption := re.search(r"\"text\":\"(.*?)\"}", matches):
-                    matches = matches.replace(caption.group(1), caption.group(1).replace('"', '\\"'))
-                if song_name := re.search(r"\"song_name\":\"(.*?)\",\"uses_original", matches):
-                    matches = matches.replace(song_name.group(1), song_name.group(1).replace('"', '\\"'))
-                if access_caption := re.findall(r"\"accessibility_caption\":\"(.*?)\",\"media_overlay_info\"", matches):
-                    for i in access_caption:
-                        matches = matches.replace(i, i.replace('"', '\\"'))
-                # matches = re.sub(r"\"text\":\"(.*?)\"}", lambda x: '"text":"' + x.group(1).replace('"', '\\"') + '"}', matches)
-                try:
-                    thejay = json.loads(matches)
-                except Exception as e:
-                    with open("matches.txt", "w", encoding="utf-8") as f1:
-                        f1.write(matches)
-                    patternchar = r"char (\d+)"
-                    character = int(re.search(patternchar, str(e)).group(1))
-                    print(matches[character-200:character+200])
-                    raise Exception(f"Failed to extract from embed captioned, error around: {matches[character-200:character+200]}")
-            with open("embed_captioned.json", "w") as f1:
-                json.dump(thejay, f1, indent=4)
-            if thejay.get("gql_data"):
-                self.public_media_extractor(thejay.get("gql_data"))
-                if caption := re.search(r"<div class=\"Caption\"><a class=\"CaptionUsername\" href=\"(?:.*?)\" data-ios-link=\"(?:.*?)target=\"_blank\">(?:.*?)</a>(.*?)<div class=\"CaptionComments\">", response):
-                    caption = caption.group(1).replace("<br />" ,"\n").replace("</a>", "")
-                    caption = re.sub(r'<a href=\"(?:.*?)>', '', caption)
-                    self.result['caption'] = unescape(caption)
-                return
-            ctxmedia: dict = thejay["context"]["media"]
-            if not ctxmedia:
-                raise self.no_media(f"No media found! Perhaps age restricted?")
-            if ctxmedia.get("edge_sidecar_to_children"):
-                post = 'multiple'
-                for index, node in enumerate(ctxmedia["edge_sidecar_to_children"]["edges"]):
-                    if node['is_video'] == True:
-                        self.media[f'mp4{index}'] = node['video_url'].replace("u0025", "%")
-                    else:
-                        self.media[f'jpg{index}'] = node['display_resources'][-1]['src'].replace("u0025", "%")
-            else:
-                if ctxmedia['is_video'] == True:
-                    post='reel'
-                    self.media['mp4'] = ctxmedia['video_url'].replace("u0025", "%")
-                else:
-                    post='single'
-                    self.media['jpg'] = ctxmedia['display_resources'][-1]['src'].replace("u0025", "%")
-            username = eval(f"thejay{self._path_parser(self._find_key(thejay, 'username'))}")
-            caption_attempt = self._find_key(thejay, "caption")
-            if caption_attempt:
-                caption = eval(f"thejay{self._path_parser(caption_attempt)}")
-                caption = caption.replace("<br />" ,"\n").replace("</a>", "")
-                caption = re.sub(r'<a href=\\\"(?:.*?)>', '', caption)
-            if date_posted_attempt := self._find_key(thejay, "taken_at_timestamp"):
-                date_posted = eval(f"thejay{self._path_parser(date_posted_attempt)}")
-            if profile_pic_attempt := self._find_key(thejay, "profile_pic_url"):
-                profile_pic = eval(f"thejay{self._path_parser(profile_pic_attempt)}")
-            if likes_attempt := self._find_key(thejay, "likes_count"):
-                likes = eval(f"thejay{self._path_parser(likes_attempt)}")
-            if comments_attempt := self._find_key(thejay, "edge_media_to_comment"):
-                comments = eval(f"thejay{self._path_parser(comments_attempt)}").get('count')
-            self.result = {"media": self.media, "username": username, "post": post, "caption": caption, 
-                        "posted": date_posted, "profile_pic": profile_pic, "likes": likes, "comments": comments}
-        else:
-            imagepattern = r"<img class=\"EmbeddedMediaImage\" alt=\"(?:.*?)\" src=\"(.*?)\""
-            image = re.findall(imagepattern, response)
-            if not image:
-                return None
-            self.media['jpg'] = unescape(image[0])
-            post = 'image'
-            username = re.findall(r"<span class=\"UsernameText\">(.*?)<", response)[0]
-            caption_pattern = r"<br />(.*?)<div class=\"CaptionComments\">"
-            caption = re.findall(caption_pattern, response)
-            if caption:
-                caption = caption[0].replace("<br />" ,"\n").replace("</a>", "")
-                caption = re.sub(r'<a href=\"(?:.*?)>', '', caption)
-            self.result = {"media": self.media, "username": username, "post": post, "caption": caption if caption else None, 
-                        "posted": date_posted, "profile_pic": profile_pic, "likes": likes, "comments": comments}
-    async def _downloader(self, filename, url):
-        async with aiofiles.open(filename, 'wb') as f1:
-            async with self.session.get(URL(url, encoded=True)) as r:
-                self.logger.debug(self._format_request_info(r.request_info))
-                progress = tqdm(total=int(r.headers.get('content-length')), unit='iB', unit_scale=True, colour="green")
-                while True:
-                    chunk = await r.content.read(1024)
-                    if not chunk:
-                        break
-                    await f1.write(chunk)
-                    progress.update(len(chunk))
-                progress.close()
-    async def _download_post(self):
-        index = 0
-        filenames = []
-        for key, value in self.result.get('media').items():
-            if key.startswith("mp4"):
-                filename = f"{self.result['username']}-{int(datetime.now().timestamp())}-{index}.mp4"
-            elif key.startswith("jpg"):
-                filename = f"{self.result['username']}-{int(datetime.now().timestamp())}-{index}.jpg"
-            await self._downloader(filename, value)
-            filenames.append(filename)
-            index += 1
-        return filenames
-    async def _get_highlights(self, link: str):
-        async with self.session.get(link, headers=self.headers, cookies=self.cookies) as r:
-            self.logger.debug(self._format_request_info(r.request_info))
-            response = await r.text("utf-8")
-            pattern = r"({\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisStoriesV\dHighlightsPageQueryRelayPreloader_(?:.*?)\",{\"__bbox\"(?:.*?),{\"__bbox\":null}]]]})</script>"
-            if not (matches := re.findall(pattern, response)):
-                raise self.no_media(f"couldnt find media in highlights")
-            jsonized = json.loads(matches[0])
-            with open("highlights.json", "w") as f1:
-                json.dump(jsonized, f1, indent=4)
-            if not (path_to_items := self._find_key(jsonized, "items")):
-                raise self.no_media(f"couldnt grab items of highlights")
-            items = eval(f"jsonized{self._path_parser(path_to_items)}")
-            self.media = {}
-            for index, item in enumerate(items):
-                if item.get('video_versions'):
-                    self.media[f"mp4{index}"] = item.get('video_versions')[0]['url']
-                elif item.get('image_versions2'):
-                    self.media[f"jpg{index}"] = item['image_versions2']['candidates'][0].get('url')
-            username = eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'username'))}")
-            profile_pic = eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'profile_pic_url'))}")
-            if not (thumbnail := eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'full_image_version'))}")):
-                thumbnail = eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'cropped_image_version'))}").get('url')
-            date_posted = eval(f"jsonized{self._path_parser(self._find_key(jsonized, 'latest_reel_media'))}")
-            self.result = {"media": self.media, "username": username, "post": "highlights", "caption": None, 
-                        "posted": date_posted, "profile_pic": profile_pic, "likes": None, "comments": None, "thumbnail": thumbnail}
-    async def _get_story(self, link: str):
-        story_pattern = r"({\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisStoriesV3ReelPageStandalone(?:.*?))</script>"
-        async with self.session.get(link, headers=self.headers, cookies=self.cookies) as r:
-            self.logger.debug(self._format_request_info(r.request_info))
-            response = await r.text("utf-8")
-            if not (matches := re.findall(story_pattern, response)):
-                raise self.get_info_fail(f"couldnt grab info from story")
-        jsoner = json.loads(matches[0])
-        with open("story.json", "w") as f1:
-            json.dump(jsoner, f1, indent=4)
-        patternmediaid = r"https://(?:www\.)?instagram\.com/stories/(?:.*?)/(.*?)/?$"
-        mediaid = re.findall(patternmediaid, link)[0]
-        items = eval(f"jsoner{self._path_parser(self._find_key(jsoner, 'items'))}")
-        self.media = {}
-        for index, item in enumerate(items):
-            if item['pk'] == mediaid:
-                if item.get('video_versions'):
-                    self.media[f'mp4{index}'] = item['video_versions'][0]['url']
-                elif item.get('image_versions2'):
-                    self.media[f"jpg{index}"] = item['image_versions2']['candidates'][0]['url']
-        username = eval(f"jsoner{self._path_parser(self._find_key(jsoner, 'reels_media'))}")[0].get('user').get('username')
-        profile_pic = eval(f"jsoner{self._path_parser(self._find_key(jsoner, 'profile_pic_url'))}")
-        date_posted = eval(f"jsoner{self._path_parser(self._find_key(jsoner, 'latest_reel_media'))}")
-        self.result = {"media": self.media, "username": username, "post": "story", "caption": None, 
-                                "posted": date_posted, "profile_pic": profile_pic, "likes": None, "comments": None,}
-    async def _csrf_check(self, link: str):
-        if not hasattr(self, "csrf"):
-            if not os.path.exists("csrf.txt"):
-                await self._get_csrf_token(link)
-            else:
-                with open("csrf.txt", "r") as f1:
-                    read = f1.read()
-                    csrf, expiry = read.split(" EXPIRY ")[0], read.split(" EXPIRY ")[1]
-                    if datetime.now() > datetime.fromisoformat(expiry):
-                        self.logger.debug("fetching new csrf token")
-                        await self._get_csrf_token(link)
-                    else:
-                        self.csrf = csrf
-                        self.cookies['csrftoken'] = self.csrf
-    async def _get_info_from_source(self, link):
-        allmedia =r'<script type=\"application/json\"  data-content-len=\"\d+\" data-sjs>(\{\"require\":\[\[\"ScheduledServerJS\",\"handle\",null,\[\{\"__bbox\":\{\"require\":\[\[\"RelayPrefetchedStreamCache\",\"next\",\[\],\[\"adp_PolarisPostRootQueryRelayPreloader_(?:.*?))</script>'
-        patternmediaid = r"content=\"instagram://media\?id=(.*?)\""
-        try:
-            async with self.session.get(link, headers=self.headers,) as r:
-                self.logger.debug(self._format_request_info(r.request_info))
-                response = await r.text("utf-8")
-                with open("response.txt", "w", encoding="utf-8") as f1:
-                    f1.write(response)
-        except aiohttp.TooManyRedirects:
-            self.logger.info(f"{Fore.RED}Too many redirects! get a new sessionid{Fore.RESET}")
-            raise self.badsessionid(f"get a new sessionid!")
-        if not (matches := re.search(allmedia, response)):
-            raise self.get_info_fail(f"couldnt grab info from post")
-        post = json.loads(re.search(allmedia, response).group(1))
-        with open("post.json", "w", encoding="utf-8") as f1:
-            json.dump(post, f1, indent=4, ensure_ascii=False)
-        return post
-
-    async def _get_post(self, link: str):
-
-        async with self.session.get(link, headers=self.headers) as r:
-            self.logger.debug(self._format_request_info(r.request_info))
-            response = await r.text("utf-8")
-            with open("response.txt", "w", encoding="utf-8") as f1:
-                f1.write(response)
-
-        patternmediaid = r"content=\"instagram://media\?id=(.*?)\""
-        mediaid = re.findall(patternmediaid, response)
-        if mediaid:
-            if not hasattr(self, "csrf"):
-                patterncsrf = re.compile(r"{\"csrf_token\":\"(.*?)\"}")
-                csrf = re.findall(patterncsrf, response)
-                self.csrf = csrf[0]
-            self.headers['x-csrftoken'] = self.csrf
-            self.headers['x-ig-app-id'] = "936619743392459"
-            async with self.session.get(f"https://www.instagram.com/api/v1/media/{mediaid[0]}/info", headers = self.headers, cookies=self.cookies) as r:
-                self.logger.debug(self._format_request_info(r.request_info))
-                response = await r.text(encoding="utf-8")
-                post = json.loads(response)
-        else:
-            post = await self._get_info_from_source(link)
-        carous = self._find_key(post, 'carousel_media')
-        itms = self._find_key(post, 'items')
-        items = eval(f"post{self._path_parser(carous if carous else itms)}")
-        with open("post.json", "w") as f1:
-            json.dump(post, f1, indent=4)
-        self.media = {}
-        if isinstance(items, dict) and items.get('message') and "Media not found" in items['message'] and items['status'] == 'fail':
-            post = await self._get_info_from_source(link)
-            finder = self._path_parser(self._find_key(post, 'items'))
-            if not finder:
-                raise self.no_media(f"Instagram couldn't return any media")
-            items = eval(f"post{finder}")
-            if post == items:
-                raise self.no_media(f"Instagram couldn't return any media")
-        elif isinstance(items, dict) and items.get('message') and 'checkpoint' in items['message']:
-            raise self.badsessionid(f"login to ur account and solve captcha\n{items['checkpoint_url']}")
-        for index, item in enumerate(items):
-            if item.get('video_versions'):
-                self.media[f'mp4{index}'] = item['video_versions'][0]['url']
-            elif item.get('image_versions2'):
-                self.media[f"jpg{index}"] = item['image_versions2']['candidates'][0]['url']
-        post_type = 'reel' if len(self.media.keys()) == 1 and list(self.media.keys())[0].startswith("mp4") else "image" if len(self.media.keys()) == 1 and list(self.media.keys())[0].startswith("jpg") else "multiple"
-        user = eval(f"post{self._path_parser(self._find_key(post, 'owner'))}")
-        username = user.get('username')
-        profile_pic = user.get('profile_pic_url')
-        likes = eval(f"post{self._path_parser(self._find_key(post, 'like_count'))}")
-        comments = eval(f"post{self._path_parser(self._find_key(post, 'comment_count', False))}")
-        caption = eval(f"post{self._path_parser(self._find_key(post, 'caption', False))}")
-        if caption:
-            caption = caption.get("text")
-        date_posted = eval(f"post{self._path_parser(self._find_key(post, 'taken_at'))}")
-        music = {}
-        if (music_attempt := self._find_key(post, "music_metadata")) and (music_data := eval(f"post{self._path_parser(music_attempt)}")):
-            if music_data.get('music_info'):
-                music['url'] = music_data['music_info']['music_asset_info']['progressive_download_url']
-                music['title'] = music_data['music_info']['music_asset_info']['title']
-                music['artist'] = music_data['music_info']['music_asset_info']['display_artist']
-                music['start_time'] = f"{int((music_data['music_info']['music_consumption_info']['audio_asset_start_time_in_ms']/1000)//60):02}:{int((music_data['music_info']['music_consumption_info']['audio_asset_start_time_in_ms']/1000)%60):02}"
-                music['duration'] = music_data['music_info']['music_consumption_info']['overlap_duration_in_ms']/1000
-        self.result = {"media": self.media, "username": username, "post": post_type, "caption": caption, 
-                        "posted": date_posted, "profile_pic": profile_pic, "likes": likes, "comments": comments, 'music': music}
-    async def _download(self, link: str, handle_merge: bool = True, public_only: bool = True, proxy: str = None, dont_download: bool = False, merge_music: bool = True):
-        if ('stories' in link or 'highlights' in link) and public_only:
-            raise ValueError(f"cant grab stories without credentials")
-        self.result = None
-        if not link.endswith("/") and "?" not in link:
-            link = link + "/"
-        if public_only:
-            await self._csrf_check(link)
-            graphql = await self._graphql_api(link)
-            if graphql:
-                self.public_media_extractor(graphql)
-            else:
-                self.logger.debug(f"Grabbing post from source")
-                try:
-                    source_result = await self._get_info_from_source(link)
-                    self._source_extractor(source_result)
-                except Exception as e:
-                    self.logger.debug(f"Errored!: \n{traceback.format_exc()}")
-                    self.logger.debug("fetching embed captioned")
-                    embed_captioned = await self._embed_captioned(link)
-                    self.embed_captioned_extractor(embed_captioned)
-        else:
-            if "highlights" in link:
-                await self._get_highlights(link)
-            elif "stories" in link:
-                await self._get_story(link)
-
-            else:
-                await self._get_post(link)
-        if not self.result:
-            raise self.get_info_fail(f"couldnt find anything")
-        if not dont_download:
-            filenames = await self._download_post()
-            if handle_merge and self.result.get('music') and self.result.get('post') == 'image' and merge_music:
-                process = await asyncio.subprocess.create_subprocess_exec("ffmpeg", *["-version"], stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-                result = await process.wait()
-                if result != 0:
-                    self.logger.info(f"You dont have ffmpeg installed, can't merge image with music")
-                    self.result['filenames'] = filenames
-                    return
-                self.logger.info(f"downloading music")
-                clear = lambda x: "".join([i for i in x if i not in "\\/:*?<>|()"])
-                filename = f"{clear(self.result['music']['title'])}-{int(datetime.now().timestamp())}.mp3"
-                await self._downloader(filename, self.result['music'].get('url'))
-                image = cv2.imread(filenames[0])
-                height, width, _ = image.shape
-                if height % 2 != 0:
-                    height -= 1
-                if width % 2 != 0:
-                    width -= 1
-                image = cv2.resize(image, (width, height))
-                cv2.imwrite(filenames[0], image)
-                process = await asyncio.create_subprocess_exec("ffmpeg", *["-loop", "1", "-r", "2", "-i", filenames[0], "-i", filename, "-ss", self.result['music'].get('start_time'), "-t",str(self.result['music']['duration']),"-c:a", "copy", filenames[0].replace('jpg', 'mp4'), '-v', 'error'])
-                await process.wait()
-                if os.path.exists(filenames[0].replace('jpg', 'mp4')):
-                    filenames.append(filenames[0].replace('jpg', 'mp4'))
-                os.remove(filename)
-            self.result['filenames'] = filenames
-    async def download(self, link: str, handle_merge: bool = True, public_only: bool = True, proxy: str = None, verbose: bool = False, dont_download: bool = False, merge_music: bool = True):
-        if verbose:
-            logging.basicConfig(level=logging.DEBUG, format="%(message)s")
-        else:
-            logging.basicConfig(level=logging.INFO, format="%(message)s")
+class InstagramDownloader:
+    def __init__(self, session: aiohttp.ClientSession = None, headers: dict[str, str] = None, proxy: str = None, fileLock: asyncio.Lock = asyncio.Lock()):
+        self.session = session
+        self.headers = headers
+        self.csrf = None
+        if (self.headers is not None and self.headers.get('cookie') and 'csrftoken' in self.headers.get('cookie') and 'x-csrftoken' in self.headers):
+            self.csrf = True
+        self.proxy = proxy
+        self.closeSession: bool = False
+        self.pageResponse: str  = None
         self.logger = logging.getLogger(__name__)
-        if not public_only:
-            if not self.sessionid:
-                self.get_credentials()
-            else:
-                self.cookies = {"sessionid": self.sessionid}
-        else:
-            self.cookies = {
-            }
-
-        self.headers = {
+        self.debug = False
+        self.lock = fileLock
+    async def __aenter__(self):
+        if (self.session is None):
+            self.session = aiohttp.ClientSession(connector=ProxyConnector.from_url(self.proxy) if self.proxy is not None else aiohttp.TCPConnector())
+            self.closeSession = True
+        if (self.headers is None):
+            self.headers = {
             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             'accept-language': 'en-US,en;q=0.6',
             'cache-control': 'max-age=0',
@@ -584,28 +47,570 @@ class instadownloader:
             'upgrade-insecure-requests': '1',
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
         }
-        if not hasattr(self, "session"):
-            async with aiohttp.ClientSession(connector=self.giveconnector(proxy)) as session:
-                self.session = session
-                await self._download(link, handle_merge, public_only, proxy, dont_download, merge_music)
+        return self
+    async def __aexit__(self, exc, b, tb):
+        if self.closeSession:
+            await self.session.close()
+        if (exc):
+            traceback.print_exception(exc, b, tb)
+    async def fetchCSRF(self, link: str = "https://instagram.com"):
+        async with self.session.get(link, headers=self.headers) as r:
+            task = asyncio.create_task(self.handleRequest(r))
+            if r.cookies.get("csrftoken") is not None and len(r.cookies.get("csrftoken").value) > 0:
+                if link != "https://instagram.com":
+                    self.pageResponse = await r.text("utf-8")
+                await task
+                return r.cookies.get("csrftoken").value
+            else:
+                csrfPattern = r"{\"csrf_token\":\"(.*?)\"}"
+                data = await r.text("utf-8")
+                if link != "https://instagram.com":
+                    self.pageResponse = data
+                csrfMatch = await asyncio.to_thread(re.search, csrfPattern, data)
+                if (csrfMatch):
+                    await task
+                    return csrfMatch.group(1)
+                else:
+                    await task
+                    return None
+            
+    async def getCSRF(self, link: str = None, ignoreCache: bool = False):
+        await self.lock.acquire()
+        if not os.path.exists("csrf_token") or ignoreCache:
+            csrf = await self.fetchCSRF(link)
+            if not csrf:
+                self.lock.release()
+                return None
         else:
-            await self._download(link, handle_merge, public_only, proxy, dont_download, merge_music)
-        return self.result
+            
+            async with aiofiles.open("csrf_token", "r") as f1:
+                try:
+                    mapping: dict[str, str] = await asyncio.to_thread(json.loads, await f1.read())
+                except:
+                    mapping = {}
+            if self.proxy:
+                csrf = mapping.get(self.proxy)
+                if not csrf:
+                    csrf = await self.fetchCSRF(link)
+                else:
+                    self.lock.release()
+                    return csrf
+            else:
+                csrf = mapping.get("B")
+                if not csrf:
+                    csrf = await self.fetchCSRF(link)
+                else:
+                    self.lock.release()
+                    return csrf
+        async with aiofiles.open("csrf_token", "w") as f1:
+            if self.proxy:
+                await f1.write(json.dumps({self.proxy: csrf}))
+            else:
+                await f1.write(json.dumps({"B": csrf}))
+        self.lock.release()
+        return csrf
+    def _updateHeaderCookie(self, item: dict):
+        cookies = {}
+        for i in self.headers['cookie'].split(";"):
+            a = i.split("=")
+            if len(a) > 1:
+                cookies[a[0].strip()] = a[1].strip()
+        cookies.update(item)
+        self.headers['cookie'] = ";".join([f"{k}={v}" for k, v in cookies.items()])
+    async def _updateCSRF(self, r: aiohttp.ClientResponse):
+        if r.cookies.get("csrftoken") is not None and len(r.cookies.get("csrftoken").value) > 0:
+            await self.lock.acquire()
+            async with aiofiles.open("csrf_token", "r") as f1:
+                data = await asyncio.to_thread(json.loads, await f1.read())
+            if self.proxy:
+                data[self.proxy] = r.cookies.get("csrftoken").value
+            else:
+                data["B"] = r.cookies.get("csrftoken").value
+            self._updateHeaderCookie({"csrftoken": r.cookies.get("csrftoken").value})
+            async with aiofiles.open("csrf_token", "w") as f1:
+                await f1.write(await asyncio.to_thread(json.dumps, data))
+            self.lock.release()
+    def logRequest(self, r: aiohttp.ClientResponse):
+        self.logger.debug(f"Sent a {r.method} request to {r.request_info.url} ({r.url}), status: {r.status}")
+        self.logger.debug(f"Headers sent:\n{json.dumps(dict(r.request_info.headers), indent=4)}")
+        self.logger.debug(str(r.cookies))
+    async def handleRequest(self, r: aiohttp.ClientResponse):
+        await asyncio.gather(*[self._updateCSRF(r), asyncio.to_thread(self.logRequest, r)])
+    async def graphQLFetch(self, shortCode: str):
+        data = f"doc_id=26298724549801149&variables={json.dumps({'shortcode': shortCode})}&__d=www&__a=1"
+        headers = {
+            'accept': '*/*',
+            'accept-language': 'en-US,en;q=0.8',
+            'content-type': 'application/x-www-form-urlencoded',
+            'origin': 'https://www.instagram.com',
+            'priority': 'u=1, i',
+            'referer': f'https://www.instagram.com/p/{shortCode}',
+            'sec-ch-ua': '"Brave";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
+            'sec-ch-ua-full-version-list': '"Brave";v="149.0.0.0", "Chromium";v="149.0.0.0", "Not)A;Brand";v="24.0.0.0"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-model': '""',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-ch-ua-platform-version': '"10.0.0"',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'sec-gpc': '1',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+            'x-csrftoken': self.headers['x-csrftoken'],
+            'x-ig-app-id': '936619743392459',
+            'cookie': self.headers['cookie'],
+        }
+        async with self.session.post("https://www.instagram.com/graphql/query", data=data, headers=headers) as r:
+            task = asyncio.create_task(self.handleRequest(r))
+            response = await r.text("utf-8")
+            try:
+                responseJson: dict = await asyncio.to_thread(json.loads, response)
+                if self.debug:
+                    await self.lock.acquire()
+                    async with aiofiles.open("graphql.json", "w") as f1:
+                        await f1.write(response)
+                    self.lock.release()
+                    self.logger.debug("Wrote graphql json to graphql.json")
+                if responseJson.get('data') is None or not responseJson['data'].get("xdt_shortcode_media"):
+                    self.logger.debug("Couldnt find media in graphql response")
+                    return -1
+                return responseJson
+            except json.JSONDecodeError:
+                self.logger.debug(f"Failed to json load graphql response")
+                if self.debug:
+                    await self.lock.acquire()
+                    async with aiofiles.open("graphql", "w") as f1:
+                        await f1.write(response)
+                    self.lock.release()
+                    self.logger.debug("Wrote bad graphql response to graphql")
+                return -1
+    @staticmethod
+    def find(obj, searchedKey: str):
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if key == searchedKey:
+                    return value
+                result = InstagramDownloader.find(value, searchedKey)
+                if result is not None:
+                    return result
+        elif isinstance(obj, list):
+            for i in obj:
+                result = InstagramDownloader.find(i, searchedKey)
+                if result is not None:
+                    return result
+        return None
+
+    @staticmethod
+    def graphQLExtract(graphQLResponse: dict):
+        data = {
+            "username": None,
+            "caption": None,
+            "datePosted": None,
+            "profilePicture": None,
+            "likes": None,
+            "comments": None,
+            "media": [],
+            "type": None,
+        }
+        if (sidecar := InstagramDownloader.find(graphQLResponse, "edge_sidecar_to_children")):
+            data['type'] = 'multiple'
+            for index, slide in enumerate(sidecar.get("edges")):
+                if slide['node'].get("video_url"):
+                    data['media'].append({'url': slide['node'].get("video_url"), 'type': 'video'})
+                elif slide['node']["is_video"] == False:
+                    data['media'].append({'url': slide['node']["display_resources"][-1]['src'], 'type': 'image'})
+        elif (video := InstagramDownloader.find(graphQLResponse, "video_url")):
+            data['type'] = 'video'
+            data['media'].append({'url': video, 'type': 'video'})
+        elif (image := InstagramDownloader.find(graphQLResponse, "display_resources")):
+            data['type'] = 'image'
+            data['media'].append({
+                'url': image[-1]['src'],
+                'type': 'image'
+            })
+        if (ownerInfo := InstagramDownloader.find(graphQLResponse, "owner")):
+            data['username'] = ownerInfo.get('username')
+            data['profilePicture'] = ownerInfo.get('profile_pic_url')
+        if (captionText := InstagramDownloader.find(graphQLResponse, "text")):
+            captionText = re.sub(r"u[0-9a-ce-f][0-9a-f]{3}", lambda match: "\\" + match.group(), captionText)
+            captionText = captionText.encode("utf-8").decode("unicode_escape")
+            data['caption'] = captionText
+        if (datePosted := InstagramDownloader.find(graphQLResponse, "taken_at_timestamp")):
+            data['datePosted'] = datePosted
+        if (likes := InstagramDownloader.find(graphQLResponse, "edge_liked_by")):
+            data['likes'] = likes.get('count')
+        elif (likes := InstagramDownloader.find(graphQLResponse, "edge_media_preview_like")):
+            data['likes'] = likes.get('count')
+        if (comments := InstagramDownloader.find(graphQLResponse, "edge_media_to_comment")):
+            data['comments'] = comments.get('count')
+        return data
+    async def sourceFetch(self, link: str, shortCode: str):
+        scriptsPattern = r"<script[^>]*>(.*?)</script>"
+        if self.pageResponse is None:
+            async with self.session.get(link, headers=self.headers) as r:
+                task = asyncio.create_task(self.handleRequest(r))
+                self.pageResponse = await r.text("utf-8")
+        scripts = await asyncio.to_thread(re.findall, scriptsPattern, self.pageResponse)
+        script = None
+        for i in scripts:
+            if ("image_versions" in i or "video_versions" in i) and shortCode in i:
+                script = i
+                break
+
+        await self.lock.acquire()
+        async with aiofiles.open("source", "w", encoding="utf-8") as f1:
+            await f1.write(self.pageResponse)
+        self.lock.release()
+        self.logger.debug("Written to source")
+        if not script:
+            self.logger.debug(f"Couldnt find post info in source")
+            return -1
+            
+        try:
+            infoJson = await asyncio.to_thread(json.loads, script)
+        except json.JSONDecodeError as e:
+            self.logger.debug(f"Failed to decode json: {e}")
+            await self.lock.acquire()
+            async with aiofiles.open("source", "w", encoding="utf-8") as f1:
+                await f1.write(self.pageResponse)
+            self.lock.release()
+            self.logger.debug("Written to source")
+            return -1
+        if self.debug:
+            await self.lock.acquire()
+            async with aiofiles.open("source.json", "w", encoding="utf-8") as f1:
+                await f1.write(await asyncio.to_thread(json.dumps, infoJson, ensure_ascii=False))
+            self.lock.release()
+            self.logger.debug("Written to source.json")
+        return infoJson
+    @staticmethod
+    def makeMediaItem(item: dict):
+        dashPattern = r"bandwidth=\"(\d+)\" codecs=\"(.*?)\"(?:.*?)FBContentLength=\"(\d+)\"(?:.*?)FBQualityLabel=\"(\d+p)\"><BaseURL>(.*?)</BaseURL>"
+        audioPattern = r"contentType=\"audio\"(?:.*?)bandwidth=\"(\d+)\" codecs=\"(.*?)\"(?:.*?)FBContentLength=\"(\d+)\"(?:.*?)<BaseURL>(.*?)</BaseURL>"
+        if (item.get('media_type') is not None and item['media_type'] == 1) or (item.get('video_versions') is None):
+            return {
+                'url': item['image_versions2']['candidates'][0]['url'],
+                'type': 'image'
+            }
+        else:
+            if item.get('video_dash_manifest'):
+                item['video_dash_manifest'] = re.sub(r"\&amp;", "&", item['video_dash_manifest'])
+                with open("dash", "w") as f1:
+                    f1.write(item['video_dash_manifest'])
+                videoFormatMatches = re.findall(dashPattern, item['video_dash_manifest'])
+                dashInfo = {
+                    'type': 'dash',
+                    'videos': [],
+                    'audio': {},
+                }
+                for bandwidth, codec, contentLength, quality, url in videoFormatMatches:
+                    dashInfo['videos'].append({
+                        'bitrate': bandwidth,
+                        'codec': codec,
+                        'contentLength': contentLength,
+                        'quality': quality,
+                        'url': url,
+                    })
+                audioMatch = re.search(audioPattern, item['video_dash_manifest'])
+                if audioMatch:
+                    dashInfo['audio'] = {
+                        'bitrate': audioMatch.group(1),
+                        'codec': audioMatch.group(2),
+                        'contentLength': audioMatch.group(3),
+                        'url': audioMatch.group(4),
+                    }
+                return dashInfo
+            else:
+                return {
+                    'url': item['video_versions'][0],
+                    'type': 'video',
+                }
+    @staticmethod
+    def sourceExtract(source: dict):
+        data = {
+            "username": None,
+            "caption": None,
+            "datePosted": None,
+            "profilePicture": None,
+            "likes": None,
+            "comments": None,
+            "media": [],
+            "type": None,
+        }
+        
+        if userInfo := InstagramDownloader.find(source, "user"):
+            data['username'] = userInfo.get("username")
+            data['profilePicture'] = userInfo.get("profile_pic_url")
+        if captionText := InstagramDownloader.find(source, "text"):
+            data['caption'] = captionText
+        if datePosted := InstagramDownloader.find(source, "taken_at"):
+            data['datePosted'] = datePosted
+        if likes := InstagramDownloader.find(source, "like_count"):
+            data['likes'] = likes
+        if comments := InstagramDownloader.find(source, "comment_count"):
+            data['comments'] = comments
+        if carouselMedia := InstagramDownloader.find(source, "carousel_media"):
+            data['type'] = 'multiple'
+            for item in carouselMedia:
+                data['media'].append(InstagramDownloader.makeMediaItem(item))
+        else:
+            media = InstagramDownloader.find(source, "media")
+            if media:
+                data['media'].append(InstagramDownloader.makeMediaItem(media))
+                data['type'] = data['media'][0]['type']
+            else:
+
+                items = InstagramDownloader.find(source, "items")
+                if items:
+                    data['media'].append(InstagramDownloader.makeMediaItem(items[0]))
+                    data['type'] = data['media'][0]['type']
+                else:
+                    gated = InstagramDownloader.find(source, "if_not_gated_logged_out")
+                    data['media'].append(InstagramDownloader.makeMediaItem(gated))
+                    data['type'] = data['media'][0]['type']
+        if (musicAssetInfo := InstagramDownloader.find(source, "music_asset_info")):
+            data['music'] = {
+                'id': musicAssetInfo['audio_cluster_id'],
+                'title': musicAssetInfo['title'],
+                'artist': musicAssetInfo['display_artist']
+            }
+        return data
+
+    async def embedFetch(self, shortCode):
+        headers = {
+            'authority': 'www.instagram.com',
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'accept-language': 'en-US,en;q=0.8',
+            'cache-control': 'max-age=0',
+            'referer': f'https://www.instagram.com/p/{shortCode}/embed/captioned/',
+            'sec-fetch-mode': 'navigate',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        }
+        async with self.session.get(f'https://www.instagram.com/p/{shortCode}/embed/captioned/', headers=headers) as r:
+            task = asyncio.create_task(self.handleRequest(r))
+            text = await r.text("utf-8")
+            if self.debug:
+                await self.lock.acquire()
+                async with aiofiles.open("embed_captioned", "w", encoding="utf-8") as f1:
+                    await f1.write(text)
+                self.lock.release()
+        return text
+    @staticmethod
+    def embedExtract(embed):
+        data = {
+            "username": None,
+            "caption": None,
+            "datePosted": None,
+            "profilePicture": None,
+            "likes": None,
+            "comments": None,
+            "media": [],
+            "type": None,
+            'music': {},
+        }
+        contextJsonPattern = r"\"contextJSON\":\"\{.*?\}\""
+        contextJson = re.search(contextJsonPattern, embed)
+        if (contextJson is not None):
+            text = "{" + contextJson.group() + "}"
+            first = json.loads(text)
+            second = json.loads(first['contextJSON'])
+            if (musicInfo := InstagramDownloader.find(second, "clips_music_attribution_info")):
+                
+                data['music'] = {
+                    'id': musicInfo['audio_id'],
+                    'title': musicInfo['song_name'],
+                    'artist': musicInfo['artist_name']
+                }
+            if second['context']['media'] is not None:
+                if (owner := second['context']['media'].get("owner")):
+                    data['username'] = owner.get("username")
+                    data['profilePicture'] = owner.get("profile_pic_url")
+                data['likes'] = second['context']['media']['edge_liked_by'].get('count')
+                data['comments'] = second['context']['media']['edge_media_to_comment'].get('count')
+                data['caption'] = second['context']['caption']
+                data['datePosted'] = second['context']['media']['taken_at_timestamp']
+                if (second['context']['media']['is_video']):
+                    data['media'].append({
+                        'type': 'video',
+                        'url': second['context']['media']['video_url']
+                    })
+                    data['type'] = 'video'
+                else:
+                    data['media'].append({
+                        'type': 'image',
+                        'url': second['context']['media']['display_resources'][-1]['src']
+                    })
+                    data['type'] = 'image'
+            elif second['gql_data']["shortcode_media"] is not None:
+                if (owner := second['gql_data']['shortcode_media'].get('owner')):
+                    data['username'] = owner.get('username')
+                    data['profilePicture'] = owner.get("profile_pic_url")
+                data['likes'] = second['gql_data']['shortcode_media']["edge_liked_by"].get("count")
+                data['comments'] = second['gql_data']['shortcode_media']["edge_media_to_comment"].get("count")
+                data['caption'] = second['gql_data']['shortcode_media']["edge_media_to_caption"]["edges"][0]["node"].get("text")
+                data['datePosted'] = second['gql_data']['shortcode_media']['taken_at_timestamp']
+                if (second['gql_data']['shortcode_media']['is_video']):
+                    data['media'].append({
+                        'type': 'video',
+                        'url': second['gql_data']['shortcode_media']['video_url'],
+                    })
+                    data['type'] = 'video'
+                else:
+                    data['media'].append({
+                        'type': 'image',
+                        'url': second['gql_data']['shortcode_media']['display_resources'][-1]['src']
+                    })
+                    data['type'] = 'image'
+        else:
+            if username := (re.search(r"username=(.*?)\&", embed)):
+                data['username'] = username.group(1)
+            if img := (re.search(r"srcset=\"((?:.*?))\" /></a>", embed)):
+                data['media'].append({
+                    'type': 'image',
+                    'url': img.group(1).split(",")[-1].split(" ")[0]
+                })
+            if caption := (re.search(r"<br />(.*?)<div class=\"CaptionComments\">", embed)):
+                data['caption'] = caption.group(1)
+        
+        return data
+    async def getMusicUrl(self, musicID: str):
+        headers = {
+            'accept': '*/*',
+            'accept-language': 'en-US,en;q=0.9',
+            'content-type': 'application/x-www-form-urlencoded',
+            'origin': 'https://www.instagram.com',
+            'priority': 'u=1, i',
+            'sec-ch-ua': '"Brave";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
+            'sec-ch-ua-full-version-list': '"Brave";v="149.0.0.0", "Chromium";v="149.0.0.0", "Not)A;Brand";v="24.0.0.0"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-model': '""',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-ch-ua-platform-version': '"10.0.0"',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'sec-gpc': '1',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+        }
+        data = f'audio_cluster_id={musicID}&max_id&original_sound_audio_asset_id={musicID}&__d=www&__a=1'
+        async with self.session.post("https://www.instagram.com/api/v1/clips/music/", headers=headers, data=data) as r:
+            text = await r.text("utf-8")
+            info = await asyncio.to_thread(json.loads, text[len('for (;;);"')-1:])
+            
+        return await asyncio.to_thread(self.find, info, 'progressive_download_url')
+    async def _downloadWorker(self, url, filename):
+        async with aiofiles.open(filename, 'wb') as f1:
+            async with self.session.get(url, headers=self.headers) as r:
+                task = asyncio.create_task(self.handleRequest(r))
+                while True:
+                    chunk = await r.content.read(1024)
+                    if not chunk:
+                        break
+                    await f1.write(chunk)
+                ext = mimetypes.guess_extension(r.headers.get("content-type"))
+        return ext
+    async def _downloadPost(self, data: dict):
+        now = str(int(datetime.now().timestamp()))
+        if data['type'] == 'multiple':
+            os.mkdir(data['shortCode'])
+            filename = os.path.join(data['shortCode'], f"{data['username']}-{now}")
+        else:
+            filename = f"{data['username']}-{now}"
+        for idx, i in enumerate(data['media']):
+            if i['type'] == 'image' or i['type'] == 'video':
+                ext = await self._downloadWorker(i['url'], filename + f'-{idx}')
+                if not ext and i['type'] == 'image':
+                    ext = ".jpg"
+                elif not ext and i['type'] == 'video':
+                    ext = ".mp4"
+                os.rename(filename + f'-{idx}', filename + f'-{idx}' + ext)
+                data['filenames'].append(filename + f'-{idx}' + ext)
+            elif i['type'] == 'dash':
+                if i.get('audio'):
+                    await asyncio.gather(*[self._downloadWorker(i['videos'][-1]['url'], filename + f"-{idx}-video"), self._downloadWorker(i['audio'].get('url'), filename + f"-{idx}-audio")])
+                    command = ["-i", filename + f"-{idx}-video", "-i", filename + f"-{idx}-audio", "-c", "copy", "-v", "error", filename + f"-{idx}.mp4"]
+                    process = await asyncio.subprocess.create_subprocess_exec("ffmpeg", *command, stderr=asyncio.subprocess.PIPE)
+                    await process.wait()
+                    if (process.returncode != 0):
+                        self.logger.info(f"FFmpeg errored combining video and audio stream\n{(await process.stderr.read()).decode()}")
+                    os.remove(filename + f"-{idx}-video")
+                    os.remove(filename + f"-{idx}-audio")
+                else:
+                    await self._downloadWorker(i['videos'][-1]['url'], filename + f"-{idx}.mp4")
+                data['filenames'].append(filename + f"-{idx}.mp4")
+    async def download(self, link: str, returnInfo: bool = False):
+        """
+        Args:
+            link (str): link to a post
+            returnInfo (bool): skip downloading the post and just return the data, default: False
+        Returns:
+            dict
+        """
+
+        if not self.csrf:
+            csrf = await self.getCSRF(link)
+            if csrf is None:
+                raise Exception("Couldnt get csrftoken")
+            if (self.headers.get('cookie')):
+                if not self.headers['cookie'].endswith(';'):
+                    self.headers['cookie'] += ';csrftoken=' + csrf + ';'
+                else:
+                    self.headers['cookie'] += 'csrftoken=' + csrf + ';'
+            else:
+                self.headers['cookie'] = 'csrftoken=' + csrf + ';'
+            self.headers['x-csrftoken'] = csrf
+        patternshortcode = r"https?://(?:www\.)?instagram\.com/(?:\S+/)?(?:reels|p|stories|reel|story|tv)/([^/?#]+)/?"
+        if self.pageResponse:
+            shortCode = (await asyncio.to_thread(re.search, r"\"shortcode\":\"(.*?\")", self.pageResponse))
+            if shortCode is None:
+                shortCode = await asyncio.to_thread(re.search, patternshortcode, link)
+            shortCode = shortCode.group(1)
+        else:
+            shortCode = await asyncio.to_thread(re.search, patternshortcode, link)
+            shortCode = shortCode.group(1)
+        graphQL = await self.graphQLFetch(shortCode)
+        if graphQL != -1:
+            data = await asyncio.to_thread(InstagramDownloader.graphQLExtract, graphQL)
+        else:
+            sourceJson = await self.sourceFetch(link, shortCode)
+            if sourceJson != -1:
+                data = await asyncio.to_thread(self.sourceExtract, sourceJson)
+            else:
+                embedCaptioned = await self.embedFetch(shortCode)
+                data = await asyncio.to_thread(self.embedExtract, embedCaptioned)
+        if data.get('music'):
+            data['music']['url'] = await self.getMusicUrl(data['music']['id'])
+        
+        if returnInfo:
+            return data
+        data['filenames'] = []
+        data['shortCode'] = shortCode
+        await self._downloadPost(data)
+        return data
+
+async def main(link, proxy, nodownload):
+    async with InstagramDownloader(
+        proxy=proxy,
+    ) as id:
+        id.debug = True
+        data = await id.download(link, nodownload)
+        print(json.dumps(data, indent=4, ensure_ascii=False))
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='download instagram posts and reels')
-    parser.add_argument("link", type=str, help='link to instagram post or reel')
-    parser.add_argument("--handle-merge", "-m", action="store_true", help="whether to not merge and let you do it")
-    parser.add_argument("--public-only", "-api", action="store_true", help="whether to use public api for posts")
-    parser.add_argument("--proxy", "-p", type=str, help="proxy to use")
-    parser.add_argument("--verbose", "-v", action="store_true", help="use verbose debugging")
-    parser.add_argument("--no-download", "-nd", action="store_true", help="whether to not download the post and just return the data")
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("link", help="Link to post")
+    parser.add_argument("--proxy", "-p", help="proxy to use in all the requests")
+    parser.add_argument("--no-download", "-n", help="prints just the post and doesn't download the post's media", action="store_true")
+    parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
-    if '?' in args.link:
-        args.link = args.link
-    insta = instadownloader()
-    asyncio.run(insta.download(args.link, handle_merge=not args.handle_merge, public_only=args.public_only, proxy=args.proxy, verbose=args.verbose, dont_download=args.no_download))
-    if not insta.result:
-        print('error occured')
+
+    handler = logging.StreamHandler()
+    if args.verbose:
+        handler.setLevel(logging.DEBUG)
+        logging.getLogger(__name__).setLevel(logging.DEBUG)
     else:
-        print('\n')
-        print(json.dumps(insta.result, indent=4, ensure_ascii = False))
+        handler.setLevel(logging.INFO)
+        logging.getLogger(__name__).setLevel(logging.INFO)
+    logging.getLogger(__name__).addHandler(handler)
+    asyncio.run(main(args.link, args.proxy, args.no_download))
+    

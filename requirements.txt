@@ -1,6 +1,3 @@
 aiohttp
 aiofiles
-tqdm
 aiohttp_socks
-colorama
-opencv-python

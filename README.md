@@ -1,47 +1,87 @@
-# Simple Instagram post and reels downloader
-Downloads reels, stories, posts with multiple media, and reels with music (combines them using ffmpeg)
-## First time setup
-in command prompt:
+# Simple Instagram post and reels downloader python 3.10.9
+## Features
+* Fetches posts asynchronously
+* Returns post information and links to download the media
+* Downloads the media (and combines video + audio stream with ffmpeg if needed)
+* Fetches url to download the music used on post (if available)
+* Ability to put your own headers (cookies) to download private posts
+## Setup
+terminal:
 ```bash
-git clone https://github.com/Hecker5556/instadownloader.git
+git clone https://github.com/Hecker5556/instadownloader
 ```
-
 ```bash
 cd instdownloader 
 ```
-If you haven't already, download [python.](https://python.org)
-download [ffmpeg](https://www.ffmpeg.org/download.html)
-### Optional: build to exe (windows) and add to path, linux users, this wont build to exe but it will add to path, chmod it and write into a file what command to use to execute it
-    python setup.py build
-### if you dont want to do that, just do:
-    pip install -r requirements.txt
+```bash
+pip install -r requirements.txt
+```
+## Fetching private posts
+Most important cookie for getting private posts is the "sessionid" cookie, which if you provide in the headers, will successfully fetch a private post.
 
-## Get sessionid
-Before you start running the code, you will need to add a sessionid (and csrftoken to decrease chances of getting temporarily disabled) to a .env file, which you can get by either checking network traffic on instagram or using a cookie viewing extension
-## Video tutorial why not 
-https://github.com/Hecker5556/instadownloader/assets/96238375/ecb26c67-24f7-4331-80ab-69ef560a45cc
+There is an important caveat, since the program doesn't send telemetry, instagram will eventually flag accounts that have activity without telemetry. To avoid this use the account frequently so the requests blend in.
+## How to get sessionid/headers
+1. open instagram.com on a browser of choice (make sure youre logged in)
+2. open dev tab (ctrl shift i, or right click and inpsect element)
+3. go to network tab
+4. refresh page
+5. click "Doc" Filter
+6. right click the request and copy as curl (bash)
 
+![alt text](image.png)
+
+7. open [curl converter](https://curlconverter.com)
+8. paste the request
+9. copy the headers
+10. in your script uncomment the 'cookie' header
+
+```python
+async def main():
+    async with InstagramDownloader(
+        headers = {
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'accept-language': 'en-US,en;q=0.9',
+            'cache-control': 'max-age=0',
+            'priority': 'u=0, i',
+            'sec-ch-ua': '"Brave";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
+            'sec-ch-ua-full-version-list': '"Brave";v="149.0.0.0", "Chromium";v="149.0.0.0", "Not)A;Brand";v="24.0.0.0"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-model': '""',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-ch-ua-platform-version': '"10.0.0"',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-user': '?1',
+            'sec-gpc': '1',
+            'upgrade-insecure-requests': '1',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+            'cookie': 'yourcookies',
+        }
+    ) as id:
+        result = await id.download("your url")
+```
 # Usage:
-## double quote the link because sometimes the link may have &
-## unbuilt:
-    python insta.py "link"
-## built:
-    insta "link"
-## linux:
-    path/to/insta.py "link"
+```
+usage: insta.py [-h] [--proxy PROXY] [--no-download] [--verbose] link
 
+positional arguments:
+  link                  Link to post
+
+options:
+  -h, --help            show this help message and exit
+  --proxy PROXY, -p PROXY
+                        proxy to use in all the requests
+  --no-download, -n     prints just the post and doesn't download the post's media
+  --verbose, -v
+```
 # Usage in python
 ```python
-import sys, asyncio
-#do this to add to sys path
-if 'instadownloader' not in sys.path:
-    sys.path.append('instadownloader')
-from instadownloader.insta import instadownloader
-info = asyncio.run(instadownloader().download(link))
-
-#in async function
+import asyncio
+from insta import InstagramDownloader
 async def main():
-    info = await instadownloader().download(link)
+    async with InstagramDownloader() as id:
+        result = await id.download("url")
 ```
 
 
