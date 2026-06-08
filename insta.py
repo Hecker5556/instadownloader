@@ -59,7 +59,7 @@ class InstagramDownloader:
             if r.cookies.get("csrftoken") is not None and len(r.cookies.get("csrftoken").value) > 0:
                 if link != "https://instagram.com":
                     self.pageResponse = await r.text("utf-8")
-                await task
+                # await task
                 return r.cookies.get("csrftoken").value
             else:
                 csrfPattern = r"{\"csrf_token\":\"(.*?)\"}"
@@ -68,10 +68,10 @@ class InstagramDownloader:
                     self.pageResponse = data
                 csrfMatch = await asyncio.to_thread(re.search, csrfPattern, data)
                 if (csrfMatch):
-                    await task
+                    # await task
                     return csrfMatch.group(1)
                 else:
-                    await task
+                    # await task
                     return None
             
     async def getCSRF(self, link: str = None, ignoreCache: bool = False):
