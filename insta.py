@@ -137,7 +137,13 @@ class InstagramDownloader:
     async def handleRequest(self, r: aiohttp.ClientResponse):
         await asyncio.gather(*[self._updateCSRF(r), asyncio.to_thread(self.logRequest, r)])
     async def graphQLFetch(self, shortCode: str):
-        data = f"doc_id=26298724549801149&variables={json.dumps({'shortcode': shortCode})}&__d=www&__a=1"
+        data = {
+            '__d': 'www',
+            '__a': '1',
+
+            'variables': '{"shortcode":"%s"}' % shortCode,
+            'doc_id': '10015901848480474'
+            }
         headers = {
             'accept': '*/*',
             'accept-language': 'en-US,en;q=0.8',
@@ -167,8 +173,8 @@ class InstagramDownloader:
                 responseJson: dict = await asyncio.to_thread(json.loads, response)
                 if self.debug:
                     await self.lock.acquire()
-                    async with aiofiles.open("graphql.json", "w") as f1:
-                        await f1.write(response)
+                    async with aiofiles.open("graphql.json", "w", encoding="utf-8") as f1:
+                        await f1.write(await asyncio.to_thread(json.dumps, responseJson, ensure_ascii=False))
                     self.lock.release()
                     self.logger.debug("Wrote graphql json to graphql.json")
                 if responseJson.get('data') is None or not responseJson['data'].get("xdt_shortcode_media"):
@@ -179,7 +185,7 @@ class InstagramDownloader:
                 self.logger.debug(f"Failed to json load graphql response")
                 if self.debug:
                     await self.lock.acquire()
-                    async with aiofiles.open("graphql", "w") as f1:
+                    async with aiofiles.open("graphql", "w", encoding="utf-8") as f1:
                         await f1.write(response)
                     self.lock.release()
                     self.logger.debug("Wrote bad graphql response to graphql")
@@ -210,30 +216,20 @@ class InstagramDownloader:
             "likes": None,
             "comments": None,
             "media": [],
+            "music": None,
             "type": None,
         }
         if (sidecar := InstagramDownloader.find(graphQLResponse, "edge_sidecar_to_children")):
             data['type'] = 'multiple'
             for index, slide in enumerate(sidecar.get("edges")):
-                if slide['node'].get("video_url"):
-                    data['media'].append({'url': slide['node'].get("video_url"), 'type': 'video'})
-                elif slide['node']["is_video"] == False:
-                    data['media'].append({'url': slide['node']["display_resources"][-1]['src'], 'type': 'image'})
-        elif (video := InstagramDownloader.find(graphQLResponse, "video_url")):
-            data['type'] = 'video'
-            data['media'].append({'url': video, 'type': 'video'})
-        elif (image := InstagramDownloader.find(graphQLResponse, "display_resources")):
-            data['type'] = 'image'
-            data['media'].append({
-                'url': image[-1]['src'],
-                'type': 'image'
-            })
+                data['media'].append(InstagramDownloader.makeMediaItem(slide['node']))
+        else:
+            data['media'].append(InstagramDownloader.makeMediaItem(graphQLResponse['data']['xdt_shortcode_media']))
+            data['type'] = data['media'][0]['type']
         if (ownerInfo := InstagramDownloader.find(graphQLResponse, "owner")):
             data['username'] = ownerInfo.get('username')
             data['profilePicture'] = ownerInfo.get('profile_pic_url')
         if (captionText := InstagramDownloader.find(graphQLResponse, "text")):
-            captionText = re.sub(r"u[0-9a-ce-f][0-9a-f]{3}", lambda match: "\\" + match.group(), captionText)
-            captionText = captionText.encode("utf-8").decode("unicode_escape")
             data['caption'] = captionText
         if (datePosted := InstagramDownloader.find(graphQLResponse, "taken_at_timestamp")):
             data['datePosted'] = datePosted
@@ -243,6 +239,12 @@ class InstagramDownloader:
             data['likes'] = likes.get('count')
         if (comments := InstagramDownloader.find(graphQLResponse, "edge_media_to_comment")):
             data['comments'] = comments.get('count')
+        if (music := InstagramDownloader.find(graphQLResponse, "clips_music_attribution_info")):
+            data['music'] = {
+                'id': music['audio_id'],
+                'title': music['song_name'],
+                'artist': music['artist_name'],
+            }
         return data
     async def sourceFetch(self, link: str, shortCode: str):
         scriptsPattern = r"<script[^>]*>(.*?)</script>"
@@ -287,16 +289,23 @@ class InstagramDownloader:
     def makeMediaItem(item: dict):
         dashPattern = r"bandwidth=\"(\d+)\" codecs=\"(.*?)\"(?:.*?)FBContentLength=\"(\d+)\"(?:.*?)FBQualityLabel=\"(\d+p)\"><BaseURL>(.*?)</BaseURL>"
         audioPattern = r"contentType=\"audio\"(?:.*?)bandwidth=\"(\d+)\" codecs=\"(.*?)\"(?:.*?)FBContentLength=\"(\d+)\"(?:.*?)<BaseURL>(.*?)</BaseURL>"
-        if (item.get('media_type') is not None and item['media_type'] == 1) or (item.get('video_versions') is None):
-            return {
-                'url': item['image_versions2']['candidates'][0]['url'],
-                'type': 'image'
-            }
+        if (item.get("is_video") is not None and item.get("is_video") == False) or (item.get("video_url") is None and item.get("video_versions") is None):
+            if item.get("image_versions2") is not None:
+                return {
+                    'url': item['image_versions2']['candidates'][0]['url'],
+                    'type': 'image'
+                }
+            else:
+                return {
+                    'url': item['display_resources'][-1]['src'],
+                    'type': 'image',
+                }
         else:
-            if item.get('video_dash_manifest'):
-                item['video_dash_manifest'] = re.sub(r"\&amp;", "&", item['video_dash_manifest'])
-                with open("dash", "w") as f1:
-                    f1.write(item['video_dash_manifest'])
+            if item.get('video_dash_manifest') or item.get("dash_info"):
+                if item.get("video_dash_manifest"):
+                    item['video_dash_manifest'] = re.sub(r"\&amp;", "&", item['video_dash_manifest'])
+                else:
+                    item['video_dash_manifest'] = re.sub(r"\&amp;", "&", item['dash_info']['video_dash_manifest'])
                 videoFormatMatches = re.findall(dashPattern, item['video_dash_manifest'])
                 dashInfo = {
                     'type': 'dash',
@@ -321,10 +330,16 @@ class InstagramDownloader:
                     }
                 return dashInfo
             else:
-                return {
-                    'url': item['video_versions'][0],
-                    'type': 'video',
-                }
+                if item.get("video_versions"):
+                    return {
+                        'url': item['video_versions'][0],
+                        'type': 'video',
+                    }
+                else:
+                    return {
+                        'url': item['video_url'],
+                        'type': 'video',
+                    }
     @staticmethod
     def sourceExtract(source: dict):
         data = {
@@ -410,6 +425,7 @@ class InstagramDownloader:
         }
         contextJsonPattern = r"\"contextJSON\":\"\{.*?\}\""
         contextJson = re.search(contextJsonPattern, embed)
+        found = False
         if (contextJson is not None):
             text = "{" + contextJson.group() + "}"
             first = json.loads(text)
@@ -422,6 +438,7 @@ class InstagramDownloader:
                     'artist': musicInfo['artist_name']
                 }
             if second['context']['media'] is not None:
+                found = True
                 if (owner := second['context']['media'].get("owner")):
                     data['username'] = owner.get("username")
                     data['profilePicture'] = owner.get("profile_pic_url")
@@ -441,7 +458,8 @@ class InstagramDownloader:
                         'url': second['context']['media']['display_resources'][-1]['src']
                     })
                     data['type'] = 'image'
-            elif second['gql_data']["shortcode_media"] is not None:
+            elif (second.get('gql_data') is not None) and second['gql_data'].get("shortcode_media") is not None:
+                found = True
                 if (owner := second['gql_data']['shortcode_media'].get('owner')):
                     data['username'] = owner.get('username')
                     data['profilePicture'] = owner.get("profile_pic_url")
@@ -461,7 +479,8 @@ class InstagramDownloader:
                         'url': second['gql_data']['shortcode_media']['display_resources'][-1]['src']
                     })
                     data['type'] = 'image'
-        else:
+            
+        if not found:
             if username := (re.search(r"username=(.*?)\&", embed)):
                 data['username'] = username.group(1)
             if img := (re.search(r"srcset=\"((?:.*?))\" /></a>", embed)):
