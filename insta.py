@@ -207,7 +207,7 @@ class InstagramDownloader:
         return None
 
     @staticmethod
-    def graphQLExtract(graphQLResponse: dict):
+    def graphQLExtract(graphQLResponse: dict, h264Only: bool = False):
         data = {
             "username": None,
             "caption": None,
@@ -222,9 +222,9 @@ class InstagramDownloader:
         if (sidecar := InstagramDownloader.find(graphQLResponse, "edge_sidecar_to_children")):
             data['type'] = 'multiple'
             for index, slide in enumerate(sidecar.get("edges")):
-                data['media'].append(InstagramDownloader.makeMediaItem(slide['node']))
+                data['media'].append(InstagramDownloader.makeMediaItem(slide['node'], h264Only))
         else:
-            data['media'].append(InstagramDownloader.makeMediaItem(graphQLResponse['data']['xdt_shortcode_media']))
+            data['media'].append(InstagramDownloader.makeMediaItem(graphQLResponse['data']['xdt_shortcode_media'], h264Only))
             data['type'] = data['media'][0]['type']
         if (ownerInfo := InstagramDownloader.find(graphQLResponse, "owner")):
             data['username'] = ownerInfo.get('username')
@@ -286,7 +286,7 @@ class InstagramDownloader:
             self.logger.debug("Written to source.json")
         return infoJson
     @staticmethod
-    def makeMediaItem(item: dict):
+    def makeMediaItem(item: dict, h264Only: bool = False):
         dashPattern = r"bandwidth=\"(\d+)\" codecs=\"(.*?)\"(?:.*?)FBContentLength=\"(\d+)\"(?:.*?)FBQualityLabel=\"(\d+p)\"><BaseURL>(.*?)</BaseURL>"
         audioPattern = r"contentType=\"audio\"(?:.*?)bandwidth=\"(\d+)\" codecs=\"(.*?)\"(?:.*?)FBContentLength=\"(\d+)\"(?:.*?)<BaseURL>(.*?)</BaseURL>"
         if (item.get("is_video") is not None and item.get("is_video") == False) or (item.get("video_url") is None and item.get("video_versions") is None):
@@ -301,7 +301,7 @@ class InstagramDownloader:
                     'type': 'image',
                 }
         else:
-            if item.get('video_dash_manifest') or item.get("dash_info"):
+            if (item.get('video_dash_manifest') or item.get("dash_info")) and not h264Only:
                 if item.get("video_dash_manifest"):
                     item['video_dash_manifest'] = re.sub(r"\&amp;", "&", item['video_dash_manifest'])
                 else:
@@ -341,7 +341,7 @@ class InstagramDownloader:
                         'type': 'video',
                     }
     @staticmethod
-    def sourceExtract(source: dict):
+    def sourceExtract(source: dict, h264Only: bool = False):
         data = {
             "username": None,
             "caption": None,
@@ -367,21 +367,21 @@ class InstagramDownloader:
         if carouselMedia := InstagramDownloader.find(source, "carousel_media"):
             data['type'] = 'multiple'
             for item in carouselMedia:
-                data['media'].append(InstagramDownloader.makeMediaItem(item))
+                data['media'].append(InstagramDownloader.makeMediaItem(item, h264Only))
         else:
             media = InstagramDownloader.find(source, "media")
             if media:
-                data['media'].append(InstagramDownloader.makeMediaItem(media))
+                data['media'].append(InstagramDownloader.makeMediaItem(media, h264Only))
                 data['type'] = data['media'][0]['type']
             else:
 
                 items = InstagramDownloader.find(source, "items")
                 if items:
-                    data['media'].append(InstagramDownloader.makeMediaItem(items[0]))
+                    data['media'].append(InstagramDownloader.makeMediaItem(items[0], h264Only))
                     data['type'] = data['media'][0]['type']
                 else:
                     gated = InstagramDownloader.find(source, "if_not_gated_logged_out")
-                    data['media'].append(InstagramDownloader.makeMediaItem(gated))
+                    data['media'].append(InstagramDownloader.makeMediaItem(gated, h264Only))
                     data['type'] = data['media'][0]['type']
         if (musicAssetInfo := InstagramDownloader.find(source, "music_asset_info")):
             data['music'] = {
@@ -557,15 +557,15 @@ class InstagramDownloader:
                 else:
                     await self._downloadWorker(i['videos'][-1]['url'], filename + f"-{idx}.mp4")
                 data['filenames'].append(filename + f"-{idx}.mp4")
-    async def download(self, link: str, returnInfo: bool = False):
+    async def download(self, link: str, returnInfo: bool = False, h264Only: bool = False):
         """
         Args:
             link (str): link to a post
             returnInfo (bool): skip downloading the post and just return the data, default: False
+            h264Only (bool): if true, get default h264 video instead of merging dash streams
         Returns:
             dict
         """
-
         if not self.csrf:
             csrf = await self.getCSRF(link)
             if csrf is None:
@@ -589,11 +589,11 @@ class InstagramDownloader:
             shortCode = shortCode.group(1)
         graphQL = await self.graphQLFetch(shortCode)
         if graphQL != -1:
-            data = await asyncio.to_thread(InstagramDownloader.graphQLExtract, graphQL)
+            data = await asyncio.to_thread(InstagramDownloader.graphQLExtract, graphQL, h264Only)
         else:
             sourceJson = await self.sourceFetch(link, shortCode)
             if sourceJson != -1:
-                data = await asyncio.to_thread(self.sourceExtract, sourceJson)
+                data = await asyncio.to_thread(self.sourceExtract, sourceJson, h264Only)
             else:
                 embedCaptioned = await self.embedFetch(shortCode)
                 data = await asyncio.to_thread(self.embedExtract, embedCaptioned)
@@ -607,12 +607,12 @@ class InstagramDownloader:
         await self._downloadPost(data)
         return data
 
-async def main(link, proxy, nodownload):
+async def main(link, proxy, nodownload, no_h264):
     async with InstagramDownloader(
         proxy=proxy,
     ) as id:
         id.debug = True
-        data = await id.download(link, nodownload)
+        data = await id.download(link, nodownload, no_h264)
         print(json.dumps(data, indent=4, ensure_ascii=False))
 if __name__ == "__main__":
     import argparse
@@ -621,6 +621,7 @@ if __name__ == "__main__":
     parser.add_argument("--proxy", "-p", help="proxy to use in all the requests")
     parser.add_argument("--no-download", "-n", help="prints just the post and doesn't download the post's media", action="store_true")
     parser.add_argument("--verbose", "-v", action="store_true")
+    parser.add_argument("--no-h264", "-d", action="store_true", help="Ignore dash formats and download default h264 format")
     args = parser.parse_args()
 
     handler = logging.StreamHandler()
@@ -631,5 +632,5 @@ if __name__ == "__main__":
         handler.setLevel(logging.INFO)
         logging.getLogger(__name__).setLevel(logging.INFO)
     logging.getLogger(__name__).addHandler(handler)
-    asyncio.run(main(args.link, args.proxy, args.no_download))
+    asyncio.run(main(args.link, args.proxy, args.no_download, args.no_h264))
     
