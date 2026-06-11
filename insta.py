@@ -177,7 +177,7 @@ class InstagramDownloader:
                         await f1.write(await asyncio.to_thread(json.dumps, responseJson, ensure_ascii=False))
                     self.lock.release()
                     self.logger.debug("Wrote graphql json to graphql.json")
-                if responseJson.get('data') is None or not responseJson['data'].get("xdt_shortcode_media"):
+                if responseJson.get('data') is None or not responseJson['data'].get("xdt_shortcode_media") or responseJson.get("status") == "fail":
                     self.logger.debug("Couldnt find media in graphql response")
                     return -1
                 return responseJson
@@ -320,6 +320,7 @@ class InstagramDownloader:
                         'quality': quality,
                         'url': url,
                     })
+                dashInfo['videos'] = list(sorted(dashInfo['videos'], lambda x: int(x['contentLength']), reverse=True))
                 audioMatch = re.search(audioPattern, item['video_dash_manifest'])
                 if audioMatch:
                     dashInfo['audio'] = {
@@ -607,9 +608,14 @@ class InstagramDownloader:
         await self._downloadPost(data)
         return data
 
-async def main(link, proxy, nodownload, no_h264):
+async def main(link, proxy, nodownload, no_h264, headersFile):
+    headers = None
+    if headersFile:
+        async with aiofiles.open(headersFile, "r") as f1:
+            headers = await asyncio.to_thread(json.loads, await f1.read())
     async with InstagramDownloader(
         proxy=proxy,
+        headers=headers
     ) as id:
         id.debug = True
         data = await id.download(link, nodownload, no_h264)
@@ -622,6 +628,7 @@ if __name__ == "__main__":
     parser.add_argument("--no-download", "-n", help="prints just the post and doesn't download the post's media", action="store_true")
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--no-h264", "-d", action="store_true", help="Ignore dash formats and download default h264 format")
+    parser.add_argument("--headers", "-f", help="Provide a json file with headers")
     args = parser.parse_args()
 
     handler = logging.StreamHandler()
@@ -632,5 +639,5 @@ if __name__ == "__main__":
         handler.setLevel(logging.INFO)
         logging.getLogger(__name__).setLevel(logging.INFO)
     logging.getLogger(__name__).addHandler(handler)
-    asyncio.run(main(args.link, args.proxy, args.no_download, args.no_h264))
+    asyncio.run(main(args.link, args.proxy, args.no_download, args.no_h264, args.headers))
     
