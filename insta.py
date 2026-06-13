@@ -320,7 +320,7 @@ class InstagramDownloader:
                         'quality': quality,
                         'url': url,
                     })
-                dashInfo['videos'] = list(sorted(dashInfo['videos'], lambda x: int(x['contentLength']), reverse=True))
+                dashInfo['videos'] = list(sorted(dashInfo['videos'], key=lambda x: int(x['contentLength']), reverse=True))
                 audioMatch = re.search(audioPattern, item['video_dash_manifest'])
                 if audioMatch:
                     dashInfo['audio'] = {
