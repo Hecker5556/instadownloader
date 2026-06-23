@@ -547,7 +547,7 @@ class InstagramDownloader:
                 data['filenames'].append(filename + f'-{idx}' + ext)
             elif i['type'] == 'dash':
                 if i.get('audio'):
-                    await asyncio.gather(*[self._downloadWorker(i['videos'][-1]['url'], filename + f"-{idx}-video"), self._downloadWorker(i['audio'].get('url'), filename + f"-{idx}-audio")])
+                    await asyncio.gather(*[self._downloadWorker(i['videos'][0]['url'], filename + f"-{idx}-video"), self._downloadWorker(i['audio'].get('url'), filename + f"-{idx}-audio")])
                     command = ["-i", filename + f"-{idx}-video", "-i", filename + f"-{idx}-audio", "-c", "copy", "-v", "error", filename + f"-{idx}.mp4"]
                     process = await asyncio.subprocess.create_subprocess_exec("ffmpeg", *command, stderr=asyncio.subprocess.PIPE)
                     await process.wait()
