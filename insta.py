@@ -205,7 +205,21 @@ class InstagramDownloader:
                 if result is not None:
                     return result
         return None
-
+    @staticmethod
+    def findCaption(obj):
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if key == "caption" and value.get("text") is not None and value.get("pk") is not None:
+                    return value
+                result = InstagramDownloader.findCaption(value)
+                if result is not None:
+                    return result
+        elif isinstance(obj, list):
+            for i in obj:
+                result = InstagramDownloader.findCaption(i)
+                if result is not None:
+                    return result
+        return None
     @staticmethod
     def graphQLExtract(graphQLResponse: dict, h264Only: bool = False):
         data = {
@@ -357,8 +371,8 @@ class InstagramDownloader:
         if userInfo := InstagramDownloader.find(source, "user"):
             data['username'] = userInfo.get("username")
             data['profilePicture'] = userInfo.get("profile_pic_url")
-        if captionText := InstagramDownloader.find(source, "text"):
-            data['caption'] = captionText
+        if captionText := InstagramDownloader.findCaption(source):
+            data['caption'] = captionText.get("text")
         if datePosted := InstagramDownloader.find(source, "taken_at"):
             data['datePosted'] = datePosted
         if likes := InstagramDownloader.find(source, "like_count"):
