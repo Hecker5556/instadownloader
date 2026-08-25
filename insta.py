@@ -209,7 +209,7 @@ class InstagramDownloader:
     def findCaption(obj):
         if isinstance(obj, dict):
             for key, value in obj.items():
-                if key == "caption" and value.get("text") is not None and value.get("pk") is not None:
+                if key == "caption" and value is not None and value.get("text") is not None and value.get("pk") is not None:
                     return value
                 result = InstagramDownloader.findCaption(value)
                 if result is not None:
