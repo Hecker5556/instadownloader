@@ -8,13 +8,7 @@
 ## Setup
 terminal:
 ```bash
-git clone https://github.com/Hecker5556/instadownloader
-```
-```bash
-cd instdownloader 
-```
-```bash
-pip install -r requirements.txt
+pip install "git+https://github.com/Hecker5556/instadownloader.git"
 ```
 ## Fetching private posts
 Most important cookie for getting private posts is the "sessionid" cookie, which if you provide in the headers, will successfully fetch a private post.
@@ -32,38 +26,24 @@ There is an important caveat, since the program doesn't send telemetry, instagra
 
 7. open [curl converter](https://curlconverter.com)
 8. paste the request
-9. copy the headers
+9. copy the cookies
 10. in your script uncomment the 'cookie' header
 
 ```python
 async def main():
+    cookies = {
+        'your': 'cookie',
+    }
     async with InstagramDownloader(
-        headers = {
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'accept-language': 'en-US,en;q=0.9',
-            'cache-control': 'max-age=0',
-            'priority': 'u=0, i',
-            'sec-ch-ua': '"Brave";v="149", "Chromium";v="149", "Not)A;Brand";v="24"',
-            'sec-ch-ua-full-version-list': '"Brave";v="149.0.0.0", "Chromium";v="149.0.0.0", "Not)A;Brand";v="24.0.0.0"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-model': '""',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-ch-ua-platform-version': '"10.0.0"',
-            'sec-fetch-dest': 'document',
-            'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'same-origin',
-            'sec-fetch-user': '?1',
-            'sec-gpc': '1',
-            'upgrade-insecure-requests': '1',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
-            'cookie': 'yourcookies',
-        }
+        cookies = cookies
     ) as id:
         result = await id.download("your url")
 ```
 # Usage:
 ```
-usage: insta.py [-h] [--proxy PROXY] [--no-download] [--verbose] link
+usage: insta.py [-h] [--proxy PROXY] [--no-download] [--verbose] [--no-h264] [--cookies-json COOKIES_JSON] [--cookies-netscape COOKIES_NETSCAPE]
+                [--cookies-headerstring COOKIES_HEADERSTRING]
+                link
 
 positional arguments:
   link                  Link to post
@@ -74,6 +54,13 @@ options:
                         proxy to use in all the requests
   --no-download, -n     prints just the post and doesn't download the post's media
   --verbose, -v
+  --no-h264, -d         Ignore dash formats and download default h264 format
+  --cookies-json COOKIES_JSON
+                        Provide cookies in JSON format
+  --cookies-netscape COOKIES_NETSCAPE
+                        Provide cookies in netscape format
+  --cookies-headerstring COOKIES_HEADERSTRING
+                        Provide cookies in header-string format
 ```
 # Usage in python
 ```python
