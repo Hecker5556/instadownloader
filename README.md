@@ -64,7 +64,7 @@ options:
 # Usage in python
 ```python
 import asyncio
-from insta import InstagramDownloader
+from instadownloader import InstagramDownloader
 async def main():
     async with InstagramDownloader() as id:
         result = await id.download("url")
