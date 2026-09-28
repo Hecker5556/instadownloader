@@ -34,6 +34,7 @@ class InstagramDownloader:
             self.closeSession = True
         self.headers = {
             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            "accept-Encoding": "gzip, deflate",
             'accept-language': 'en-US,en;q=0.6',
             'cache-control': 'max-age=0',
             'priority': 'u=0, i',
@@ -162,7 +163,7 @@ class InstagramDownloader:
             'sec-fetch-site': 'same-origin',
             'sec-gpc': '1',
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
-            'x-csrftoken': self.headers.get('x-csrftoken', self.cookies.get('csrftoken')),
+            'x-csrftoken': self.headers.get('x-csrftoken', self.cookies.get('csrftoken') if self.cookies is not None else None),
             'x-ig-app-id': '936619743392459',
         }
         async with self.session.post("https://www.instagram.com/graphql/query", data=data, headers=headers, cookies=self.cookies) as r:
