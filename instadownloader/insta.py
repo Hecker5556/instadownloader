@@ -585,7 +585,8 @@ class InstagramDownloader:
             csrf = await self.getCSRF(link)
             if csrf is None:
                 raise Exception("Couldnt get csrftoken")
-            self.cookies['csrftoken'] = csrf
+            if self.cookies is not None:
+                self.cookies['csrftoken'] = csrf
             self.headers['x-csrftoken'] = csrf
         patternshortcode = r"https?://(?:www\.)?instagram\.com/(?:\S+/)?(?:reels|p|stories|reel|story|tv)/([^/?#]+)/?"
         if self.pageResponse:
