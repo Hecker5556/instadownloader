@@ -113,8 +113,6 @@ class InstagramDownloader:
                 await f1.write(json.dumps({"B": csrf}))
         self.lock.release()
         return csrf
-    def _updateHeaderCookie(self, item: dict):
-        self.cookies.update(item)
     async def _updateCSRF(self, r: aiohttp.ClientResponse):
         if r.cookies.get("csrftoken") is not None and len(r.cookies.get("csrftoken").value) > 0:
             await self.lock.acquire()
@@ -124,10 +122,14 @@ class InstagramDownloader:
                 data[self.proxy] = r.cookies.get("csrftoken").value
             else:
                 data["B"] = r.cookies.get("csrftoken").value
-            self._updateHeaderCookie({"csrftoken": r.cookies.get("csrftoken").value})
+            if self.cookies is not None:
+                self.cookies.update({"csrftoken": r.cookies.get("csrftoken").value})
             async with aiofiles.open(self.make_file_name("csrf_token"), "w") as f1:
                 await f1.write(await asyncio.to_thread(json.dumps, data))
             self.lock.release()
+        new_cookies = {key: morsel.value for key, morsel in r.cookies.items()}
+        if self.cookies is not None:
+            self.cookies.update(new_cookies)
     def logRequest(self, r: aiohttp.ClientResponse):
         self.logger.debug(f"Sent a {r.method} request to {r.request_info.url} ({r.url}), status: {r.status}")
         self.logger.debug(f"Headers sent:\n{json.dumps(dict(r.request_info.headers), indent=4)}")
