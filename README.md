@@ -4,14 +4,14 @@
 * Returns post information and links to download the media
 * Downloads the media (and combines video + audio stream with ffmpeg if needed)
 * Fetches url to download the music used on post (if available)
-* Ability to put your own headers (cookies) to download private posts
+* Ability to put your own cookies to download private/nsfw posts
 ## Setup
 terminal:
 ```bash
 pip install "git+https://github.com/Hecker5556/instadownloader.git"
 ```
 ## Fetching private posts
-Most important cookie for getting private posts is the "sessionid" cookie, which if you provide in the headers, will successfully fetch a private post.
+Most important cookie for getting private posts is the "sessionid" cookie, which if you provide in the cookies, will successfully fetch a private post.
 
 There is an important caveat, since the program doesn't send telemetry, instagram will eventually flag accounts that have activity without telemetry. To avoid this use the account frequently so the requests blend in.
 ## How to get sessionid/headers
@@ -27,7 +27,6 @@ There is an important caveat, since the program doesn't send telemetry, instagra
 7. open [curl converter](https://curlconverter.com)
 8. paste the request
 9. copy the cookies
-10. in your script uncomment the 'cookie' header
 
 ```python
 async def main():
