@@ -32,8 +32,7 @@ class InstagramDownloader:
         if (self.session is None):
             self.session = aiohttp.ClientSession(connector=ProxyConnector.from_url(self.proxy) if self.proxy is not None else aiohttp.TCPConnector())
             self.closeSession = True
-        if (self.headers is None):
-            self.headers = {
+        self.headers = {
             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             'accept-language': 'en-US,en;q=0.6',
             'cache-control': 'max-age=0',
