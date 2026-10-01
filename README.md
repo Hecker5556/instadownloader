@@ -40,9 +40,9 @@ async def main():
 ```
 # Usage:
 ```
-usage: insta.py [-h] [--proxy PROXY] [--no-download] [--verbose] [--no-h264] [--cookies-json COOKIES_JSON] [--cookies-netscape COOKIES_NETSCAPE]
-                [--cookies-headerstring COOKIES_HEADERSTRING]
-                link
+usage: instadownloader [-h] [--proxy PROXY] [--no-download] [--verbose] [--no-h264] [--cookies-json COOKIES_JSON]
+                       [--cookies-netscape COOKIES_NETSCAPE] [--cookies-headerstring COOKIES_HEADERSTRING]
+                       link
 
 positional arguments:
   link                  Link to post

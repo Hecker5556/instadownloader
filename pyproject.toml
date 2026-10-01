@@ -15,4 +15,8 @@ dependencies = [
 "aiofiles",
 ]
 [project.scripts]
-my-script = "instadownloader.insta:main"
+instadownloader = "instadownloader.insta:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["instadownloader*"]

@@ -649,7 +649,7 @@ async def main(link, proxy, nodownload, no_h264, potential_cookies: list[str]):
         id.debug = True
         data = await id.download(link, nodownload, no_h264)
         print(json.dumps(data, indent=4, ensure_ascii=False))
-if __name__ == "__main__":
+def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("link", help="Link to post")
@@ -672,3 +672,5 @@ if __name__ == "__main__":
     logging.getLogger(__name__).addHandler(handler)
     asyncio.run(main(args.link, args.proxy, args.no_download, args.no_h264, [args.cookies_json, args.cookies_netscape, args.cookies_headerstring]))
     
+if __name__ == "__main__":
+    main()
