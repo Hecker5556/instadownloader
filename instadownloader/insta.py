@@ -278,7 +278,7 @@ class InstagramDownloader:
                 self.pageResponse = await r.text("utf-8")
         error_pattern = r"gating_ruling\":{\"gating_type\":\d+,\"description\":\"([^\"]*?)\",\"title\":\"([^\"]*?)\"\}"
         error_match = await asyncio.to_thread(re.search, error_pattern, self.pageResponse)
-        if (error_pattern):
+        if (error_match):
             self.logger.info(f"Errored in getting source: {error_match.group(1)}")
             return -1
         script = await asyncio.to_thread(re.search, scriptsPattern, self.pageResponse)
