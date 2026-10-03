@@ -51,6 +51,7 @@ class InstagramDownloader:
             'sec-gpc': '1',
             'upgrade-insecure-requests': '1',
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+            'cookie': self.make_cookie_string(self.cookies),
         }
         return self
     async def __aexit__(self, exc, b, tb):
@@ -59,7 +60,7 @@ class InstagramDownloader:
         if (exc):
             traceback.print_exception(exc, b, tb)
     async def fetchCSRF(self, link: str = "https://instagram.com"):
-        async with self.session.get(link, headers=self.headers, cookies=self.cookies) as r:
+        async with self.session.get(link, headers=self.headers) as r:
             task = asyncio.create_task(self.handleRequest(r))
             if r.cookies.get("csrftoken") is not None and len(r.cookies.get("csrftoken").value) > 0:
                 if link != "https://instagram.com":
@@ -140,8 +141,9 @@ class InstagramDownloader:
     @staticmethod
     def make_cookie_string(cookies: dict):
         cookie = ""
-        for key, value in cookies.items():
-            cookie += f"{key}={value}; "
+        if cookies is not None:
+            for key, value in cookies.items():
+                cookie += f"{key}={value}; "
         return cookie
     async def graphQLFetch(self, shortCode: str):
         data = {
