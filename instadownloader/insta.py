@@ -137,6 +137,12 @@ class InstagramDownloader:
         self.logger.debug(str(r.cookies))
     async def handleRequest(self, r: aiohttp.ClientResponse):
         await asyncio.gather(*[self._updateCSRF(r), asyncio.to_thread(self.logRequest, r)])
+    @staticmethod
+    def make_cookie_string(cookies: dict):
+        cookie = ""
+        for key, value in cookies.items():
+            cookie += f"{key}={value}; "
+        return cookie
     async def graphQLFetch(self, shortCode: str):
         data = {
             '__d': 'www',
@@ -165,8 +171,9 @@ class InstagramDownloader:
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
             'x-csrftoken': self.headers.get('x-csrftoken', self.cookies.get('csrftoken') if self.cookies is not None else None),
             'x-ig-app-id': '936619743392459',
+            "cookie": self.make_cookie_string(self.cookies),
         }
-        async with self.session.post("https://www.instagram.com/graphql/query", data=data, headers=headers, cookies=self.cookies) as r:
+        async with self.session.post("https://www.instagram.com/graphql/query", data=data, headers=headers) as r:
             task = asyncio.create_task(self.handleRequest(r))
             response = await r.text("utf-8")
             try:
@@ -261,17 +268,13 @@ class InstagramDownloader:
             }
         return data
     async def sourceFetch(self, link: str, shortCode: str):
-        scriptsPattern = r"<script[^>]*>(.*?)</script>"
+        scriptsPattern = r"<script[^>]*>((?:.*?)" +  f"(?:{shortCode})?" + r"(?:image_versions|video_versions)(?:.*?)" + f"(?:{shortCode})?" + r"(?:.*?))</script>"
         if self.pageResponse is None:
-            async with self.session.get(link, headers=self.headers, cookies=self.cookies) as r:
+            self.headers["cookie"] = self.make_cookie_string(self.cookies)
+            async with self.session.get(link, headers=self.headers) as r:
                 task = asyncio.create_task(self.handleRequest(r))
                 self.pageResponse = await r.text("utf-8")
-        scripts = await asyncio.to_thread(re.findall, scriptsPattern, self.pageResponse)
-        script = None
-        for i in scripts:
-            if ("image_versions" in i or "video_versions" in i) and shortCode in i:
-                script = i
-                break
+        script = await asyncio.to_thread(re.search, scriptsPattern, self.pageResponse)
 
         await self.lock.acquire()
         async with aiofiles.open(self.make_file_name("source"), "w", encoding="utf-8") as f1:
@@ -281,7 +284,7 @@ class InstagramDownloader:
         if not script:
             self.logger.debug(f"Couldnt find post info in source")
             return -1
-            
+        script = script.group(1)
         try:
             infoJson = await asyncio.to_thread(json.loads, script)
         except json.JSONDecodeError as e:
@@ -415,8 +418,9 @@ class InstagramDownloader:
             'referer': f'https://www.instagram.com/p/{shortCode}/embed/captioned/',
             'sec-fetch-mode': 'navigate',
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            "cookie": self.make_cookie_string(self.cookies),
         }
-        async with self.session.get(f'https://www.instagram.com/p/{shortCode}/embed/captioned/', headers=headers, cookies=self.cookies) as r:
+        async with self.session.get(f'https://www.instagram.com/p/{shortCode}/embed/captioned/', headers=headers) as r:
             task = asyncio.create_task(self.handleRequest(r))
             text = await r.text("utf-8")
             if self.debug:
@@ -525,16 +529,18 @@ class InstagramDownloader:
             'sec-fetch-site': 'same-origin',
             'sec-gpc': '1',
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+            "cookie": self.make_cookie_string(self.cookies),
         }
         data = f'audio_cluster_id={musicID}&max_id&original_sound_audio_asset_id={musicID}&__d=www&__a=1'
-        async with self.session.post("https://www.instagram.com/api/v1/clips/music/", headers=headers, data=data, cookies=self.cookies) as r:
+        async with self.session.post("https://www.instagram.com/api/v1/clips/music/", headers=headers, data=data) as r:
             text = await r.text("utf-8")
             info = await asyncio.to_thread(json.loads, text[len('for (;;);"')-1:])
             
         return await asyncio.to_thread(self.find, info, 'progressive_download_url')
     async def _downloadWorker(self, url, filename):
         async with aiofiles.open(filename, 'wb') as f1:
-            async with self.session.get(url, headers=self.headers, cookies=self.cookies) as r:
+            self.headers['cookie'] = self.make_cookie_string(self.cookies)
+            async with self.session.get(url, headers=self.headers) as r:
                 task = asyncio.create_task(self.handleRequest(r))
                 while True:
                     chunk = await r.content.read(1024)
@@ -618,7 +624,7 @@ class InstagramDownloader:
         await self._downloadPost(data)
         return data
 
-async def main(link, proxy, nodownload, no_h264, potential_cookies: list[str]):
+async def async_main(link, proxy, nodownload, no_h264, potential_cookies: list[str]):
     cookies = {}
     if potential_cookies[0] is not None:
         async with aiofiles.open(potential_cookies[0], "r") as f1:
@@ -644,11 +650,14 @@ async def main(link, proxy, nodownload, no_h264, potential_cookies: list[str]):
                 cookies[name] = value
     async with InstagramDownloader(
         proxy=proxy,
-        cookies=cookies if len(cookies) > 0 else None,
-    ) as id:
-        id.debug = True
-        data = await id.download(link, nodownload, no_h264)
+        cookies=cookies.copy() if len(cookies) > 0 else None,
+    ) as insta:
+        insta.debug = True
+        data = await insta.download(link, nodownload, no_h264)
         print(json.dumps(data, indent=4, ensure_ascii=False))
+        for key, value in insta.cookies.items():
+            if cookies.get(key) != value:
+                insta.logger.debug(f"{key} cookie has been updated")
 def main():
     import argparse
     parser = argparse.ArgumentParser()
@@ -670,7 +679,7 @@ def main():
         handler.setLevel(logging.INFO)
         logging.getLogger(__name__).setLevel(logging.INFO)
     logging.getLogger(__name__).addHandler(handler)
-    asyncio.run(main(args.link, args.proxy, args.no_download, args.no_h264, [args.cookies_json, args.cookies_netscape, args.cookies_headerstring]))
+    asyncio.run(async_main(args.link, args.proxy, args.no_download, args.no_h264, [args.cookies_json, args.cookies_netscape, args.cookies_headerstring]))
     
 if __name__ == "__main__":
     main()
