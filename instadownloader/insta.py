@@ -276,6 +276,11 @@ class InstagramDownloader:
             async with self.session.get(link, headers=self.headers) as r:
                 task = asyncio.create_task(self.handleRequest(r))
                 self.pageResponse = await r.text("utf-8")
+        error_pattern = r"gating_ruling\":{\"gating_type\":\d+,\"description\":\"([^\"]*?)\",\"title\":\"([^\"]*?)\"\}"
+        error_match = await asyncio.to_thread(re.search, error_pattern, self.pageResponse)
+        if (error_pattern):
+            self.logger.info(f"Errored in getting source: {error_match.group(1)}")
+            return -1
         script = await asyncio.to_thread(re.search, scriptsPattern, self.pageResponse)
 
         await self.lock.acquire()
@@ -657,9 +662,10 @@ async def async_main(link, proxy, nodownload, no_h264, potential_cookies: list[s
         insta.debug = True
         data = await insta.download(link, nodownload, no_h264)
         print(json.dumps(data, indent=4, ensure_ascii=False))
-        for key, value in insta.cookies.items():
-            if cookies.get(key) != value:
-                insta.logger.debug(f"{key} cookie has been updated")
+        if insta.cookies is not None:
+            for key, value in insta.cookies.items():
+                if cookies.get(key) != value:
+                    insta.logger.debug(f"{key} cookie has been updated")
 def main():
     import argparse
     parser = argparse.ArgumentParser()
