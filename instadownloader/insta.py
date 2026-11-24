@@ -218,7 +218,8 @@ class InstagramDownloader:
     def findCaption(obj):
         if isinstance(obj, dict):
             for key, value in obj.items():
-                if key == "caption" and value is not None and value.get("text") is not None and value.get("pk") is not None:
+                # if key == "caption" and value is not None and value.get("text") is not None and value.get("pk") is not None:
+                if key == "caption" and value is not None and value.get("text") is not None:
                     return value
                 result = InstagramDownloader.findCaption(value)
                 if result is not None:
@@ -406,8 +407,13 @@ class InstagramDownloader:
                     data['type'] = data['media'][0]['type']
                 else:
                     gated = InstagramDownloader.find(source, "if_not_gated_logged_out")
-                    data['media'].append(InstagramDownloader.makeMediaItem(gated, h264Only))
-                    data['type'] = data['media'][0]['type']
+                    if gated is not None:
+                        data['media'].append(InstagramDownloader.makeMediaItem(gated, h264Only))
+                        data['type'] = data['media'][0]['type']
+                    else:
+                        edges = InstagramDownloader.find(source, "xig_logged_out_reels_feed")
+                        data['media'].append(InstagramDownloader.makeMediaItem(edges['edges'][0]['node']))
+                        data['type'] = (data['media'][0]['type'])
         if (musicAssetInfo := InstagramDownloader.find(source, "music_asset_info")):
             data['music'] = {
                 'id': musicAssetInfo['audio_cluster_id'],
